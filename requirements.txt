@@ -1,10 +1,23 @@
-FastAPI==0.75.0
-asyncpg==0.23.0
-sqlalchemy==1.4.27
-alembic==1.7.3
-python-dotenv==0.19.2
-jinja2==3.0.3
+# Serveur et Framework
+fastapi
+uvicorn[standard]
+
+# Base de données (Asynchrone + Drivers)
+sqlalchemy[asyncio]
+asyncpg
+psycopg2-binary
+alembic
+
+# Templates et Formulaires
+jinja2
+python-multipart
+
+# Sécurité et Authentification
 passlib[bcrypt]==1.7.4
-itsdangerous==2.0.1
-cryptography==3.4.8
-starlette==0.14.2
+bcrypt==4.0.1
+itsdangerous
+cryptography
+python-dotenv
+
+# Génération PDF
+weasyprint
