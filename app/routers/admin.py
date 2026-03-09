@@ -1,33 +1,51 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from decimal import Decimal
+from sqlalchemy import String, select, func, and_, or_, text, desc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 import csv
 import io
 import zipfile
-from io import BytesIO
+
+from io import BytesIO, StringIO
 from datetime import datetime
 from cryptography.fernet import Fernet, InvalidToken
-from weasyprint import HTML 
+try:
+    from weasyprint import HTML
+    WEASYPRINT_AVAILABLE = True
+except OSError:
+    WEASYPRINT_AVAILABLE = False
+    print("⚠️ WeasyPrint non chargé (GTK manquant). Les exports PDF seront désactivés.")
+#from weasyprint import HTML
 
 from app.database import get_db
-from app.dependencies import require_role
 from app.config import FERNET_KEY
+from app.dependencies import get_current_user, require_role
 
 # Imports des modèles
-from app.models.user import User, Role, Site, Programme, MATIERES
+from app.models.user import User, Role, Site, Programme, Filiere, Annee, MATIERES
 from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
 from app.models.sub_mission import SousMission
 from app.models.mission import Mission
 from app.schemas.constants import UNITES_CHOICES
 
+import logging
+# Configuration d'un logger pour voir ce qui bloque
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory="app/templates")
+
+# Petit utilitaire pour vérifier si l'user est bien admin
+async def check_admin(user: User = Depends(get_current_user)):
+    if user.role != Role.admin:
+        raise HTTPException(status_code=403, detail="Accès interdit")
+    return user
 
 # --- SÉCURITÉ : Définition des niveaux d'accès ---
 staff_required = require_role([Role.admin, Role.coordo, Role.resp])
@@ -55,22 +73,167 @@ def decrypt(value: str, f) -> str:
 @router.get("/stats", response_class=HTMLResponse)
 async def get_stats(
     request: Request,
-    current_user: User = Depends(admin_only),
+    programme: Optional[str] = Query(None),
+    matiere: Optional[str] = Query(None),
+    mission_nom: Optional[str] = Query(None),
+    statut: Optional[str] = Query(None),
+    start_mois: int = Query(1),
+    start_annee: int = Query(datetime.now().year),
+    end_mois: int = Query(12),
+    end_annee: int = Query(datetime.now().year),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Stats par Site (Total Brut validé)
+    # --- 1. IMPORTS CORRIGÉS (À l'intérieur de la fonction pour éviter les cycles) ---
+    from app.models.user import User, Site, Programme, MATIERES
+    from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
+    from app.models.mission import Mission
+    from app.models.sub_mission import SousMission  # Chemin correct ici
+    from sqlalchemy import func, select, and_, desc
+
+    # --- 2. INITIALISATION DES LISTES POUR FILTRES ---
+    stmt_mat_existantes = select(User.matiere).where(User.matiere != None).distinct()
+    res_mat = await db.execute(stmt_mat_existantes)
+    matieres_en_base = {row[0] for row in res_mat.all()}
+
+    programmes_matieres = {}
+    ordre_programmes = [Programme.pass_, Programme.las1, Programme.las2]
+
+    for p_enum in ordre_programmes:
+        p_name = p_enum.value
+        if p_name in MATIERES:
+            liste_triee = [m for m in MATIERES[p_name] if m in matieres_en_base]
+            if liste_triee:
+                programmes_matieres[p_name] = liste_triee
+
+    toutes_les_matieres = []
+    for p_name in MATIERES:
+        for m in MATIERES[p_name]:
+            if m in matieres_en_base and m not in toutes_les_matieres:
+                toutes_les_matieres.append(m)
+
+    stmt_m_group = (
+        select(Mission.titre, SousMission.titre)
+        .join(SousMission, Mission.id == SousMission.mission_id)
+        .where(SousMission.is_active == True)
+        .order_by(Mission.ordre, SousMission.ordre)
+    )
+    res_m_group = await db.execute(stmt_m_group)
+    
+    missions_groupes = {}
+    for m_titre, sm_titre in res_m_group.all():
+        if m_titre not in missions_groupes:
+            missions_groupes[m_titre] = []
+        missions_groupes[m_titre].append(sm_titre)
+
+    # --- 3. LOGIQUE DES FILTRES (PÉRIODE GLISSANTE) ---
+    start_val = start_annee * 100 + start_mois
+    end_val = end_annee * 100 + end_mois
+
+    filters = [
+        (Declaration.annee * 100 + Declaration.mois) >= start_val,
+        (Declaration.annee * 100 + Declaration.mois) <= end_val
+    ]
+
+    if statut == "validee":
+        filters.append(Declaration.statut == StatutDeclaration.validee)
+    elif statut == "soumise":
+        filters.append(Declaration.statut == StatutDeclaration.soumise)
+    else:
+        filters.append(Declaration.statut.in_([StatutDeclaration.validee, StatutDeclaration.soumise]))
+
+    if programme and programme.strip():
+        filters.append(User.programme == programme)
+    if matiere and matiere.strip():
+        filters.append(User.matiere == matiere)
+
+    if mission_nom and mission_nom.strip():
+        if mission_nom.startswith("PARENT:"):
+            nom_pur = mission_nom.replace("PARENT:", "")
+            filters.append(Mission.titre == nom_pur)
+        else:
+            filters.append(SousMission.titre == mission_nom)
+
+    # --- 4. CALCULS GLOBAUX ---
+    stmt_argent = (
+        select(func.sum(LigneDeclaration.quantite * SousMission.tarif))
+        .select_from(Declaration)
+        .join(User, Declaration.user_id == User.id)
+        .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
+        .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
+        .where(and_(*filters))
+    )
+    res_argent = await db.execute(stmt_argent)
+    total_avicenne = res_argent.scalar() or 0.0
+
+    stmt_unites = (
+        select(SousMission.unite, func.sum(LigneDeclaration.quantite))
+        .select_from(Declaration)
+        .join(User, Declaration.user_id == User.id)
+        .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
+        .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
+        .where(and_(*filters)) 
+        .group_by(SousMission.unite)
+    )
+    res_unites = await db.execute(stmt_unites)
+    stats_unites = {row[0]: row[1] for row in res_unites.all() if row[0]}
+
+    # --- 5. ÉVOLUTION MENSUELLE ---
+    stmt_comp = (
+        select(
+            Declaration.annee,
+            Declaration.mois,
+            User.site,
+            func.sum(LigneDeclaration.quantite * SousMission.tarif).label("total")
+        )
+        .join(User, Declaration.user_id == User.id)
+        .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
+        .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
+        .where(and_(*filters))
+        .group_by(Declaration.annee, Declaration.mois, User.site)
+    )
+    res_comp = await db.execute(stmt_comp)
+    
+    evo_est, evo_sud = {}, {}
+    for row in res_comp.all():
+        key = f"{row.annee}-{row.mois}"
+        if row.site == Site.lyon_est:
+            evo_est[key] = float(row.total or 0)
+        elif row.site == Site.lyon_sud:
+            evo_sud[key] = float(row.total or 0)
+
+    data_lyon_est, data_lyon_sud = [], []
+    curr_m, curr_a = start_mois, start_annee
+    while (curr_a * 100 + curr_m) <= (end_annee * 100 + end_mois):
+        key = f"{curr_a}-{curr_m}"
+        data_lyon_est.append(evo_est.get(key, 0.0))
+        data_lyon_sud.append(evo_sud.get(key, 0.0))
+        curr_m += 1
+        if curr_m > 12:
+            curr_m = 1
+            curr_a += 1
+        if len(data_lyon_est) > 36: break # Sécurité 3 ans
+
+    # --- 6. TOP 10 & SITES ---
     stmt_sites = (
-        select(User.site, func.sum(LigneDeclaration.quantite * SousMission.tarif).label("total"))
+        select(User.site, func.sum(LigneDeclaration.quantite * SousMission.tarif))
+        .select_from(User)
         .join(Declaration, User.id == Declaration.user_id)
         .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
         .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .where(Declaration.statut == StatutDeclaration.validee)
+        .where(and_(*filters))
         .group_by(User.site)
     )
-    res_sites = await db.execute(stmt_sites)
-    stats_sites = res_sites.all()
+    stats_sites = (await db.execute(stmt_sites)).all()
 
-    # 2. Top 10 Intervenants
+    total_lyon_est = 0.0
+    total_lyon_sud = 0.0
+    for site_enum, montant in stats_sites:
+        if site_enum == Site.lyon_est:
+            total_lyon_est = float(montant or 0)
+        elif site_enum == Site.lyon_sud:
+            total_lyon_sud = float(montant or 0)
+
     stmt_users = (
         select(
             User, 
@@ -80,23 +243,138 @@ async def get_stats(
         .join(Declaration, User.id == Declaration.user_id)
         .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
         .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .where(Declaration.statut == StatutDeclaration.validee)
+        .where(and_(*filters))
         .group_by(User.id)
-        .order_by(func.sum(LigneDeclaration.quantite * SousMission.tarif).desc())
+        .order_by(desc(func.sum(LigneDeclaration.quantite * SousMission.tarif)))
         .limit(10)
     )
     res_users = await db.execute(stmt_users)
-    stats_users = res_users.all()
 
     return templates.TemplateResponse(
         "admin/stats.html", 
         {
             "request": request, 
-            "user": current_user, 
-            "current_user": current_user, 
-            "stats_sites": stats_sites,
-            "stats_users": stats_users
+            "user": current_user,
+            "data_lyon_est": data_lyon_est, 
+            "data_lyon_sud": data_lyon_sud,
+            "total_avicenne": total_avicenne,
+            "total_lyon_est": total_lyon_est,
+            "total_lyon_sud": total_lyon_sud,
+            "stats_unites": stats_unites,
+            "current_start_mois": start_mois,
+            "current_start_annee": start_annee,
+            "current_end_mois": end_mois,
+            "current_end_annee": end_annee,
+            "current_programme": programme,
+            "current_matiere": matiere,
+            "current_mission": mission_nom,
+            "current_statut": statut,
+            "programmes_matieres": programmes_matieres,
+            "toutes_les_matieres": toutes_les_matieres, 
+            "missions_groupes": missions_groupes,
+            "stats_sites": stats_sites, 
+            "stats_users": res_users.all()
         }
+    )
+
+# --- EXPORT STATS ---
+@router.get("/stats/export-csv")
+async def export_stats_csv(
+    start_mois: int = Query(1),
+    start_annee: int = Query(2025),
+    end_mois: int = Query(12),
+    end_annee: int = Query(2026),
+    programme: Optional[str] = Query(None),
+    statut: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(Role.admin))
+):
+    # 1. Calcul de la période
+    start_val = start_annee * 100 + start_mois
+    end_val = end_annee * 100 + end_mois
+
+    # 2. Construction des filtres
+    filters = [
+        (Declaration.annee * 100 + Declaration.mois) >= start_val,
+        (Declaration.annee * 100 + Declaration.mois) <= end_val
+    ]
+
+    # LOGIQUE DE STATUT ULTRA-FIABLE (Comparaison textuelle)
+    if statut == "validee":
+        filters.append(Declaration.statut == "validee")
+    elif statut == "soumise":
+        filters.append(Declaration.statut == "soumise")
+    else:
+        # "Soumise & Validée" : Tout sauf ce qui contient 'brouillon'
+        # On utilise cast pour être certain que la base de données compare du texte
+        filters.append(Declaration.statut.cast(String) != "brouillon")
+
+    if programme and programme.strip():
+        filters.append(Declaration.programme == programme)
+
+    # 3. La Requête avec OUTERJOIN (Pour ne perdre aucune ligne validée)
+    stmt = (
+        select(
+            User.nom, 
+            User.prenom, 
+            Declaration.site,
+            Declaration.statut,
+            Declaration.annee, 
+            Declaration.mois,
+            Declaration.programme,
+            func.coalesce(Mission.titre, "Mission Inconnue").label("m_titre"), 
+            func.coalesce(SousMission.titre, "Sous-mission Inconnue").label("sm_titre"),
+            LigneDeclaration.quantite,
+            SousMission.unite, 
+            func.coalesce(SousMission.tarif, 0).label("tarif_unit"),
+            (LigneDeclaration.quantite * func.coalesce(SousMission.tarif, 0)).label("total_ligne")
+        )
+        .select_from(Declaration)
+        .outerjoin(User, Declaration.user_id == User.id)
+        .outerjoin(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
+        .outerjoin(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
+        .outerjoin(Mission, SousMission.mission_id == Mission.id)
+        .where(and_(*filters))
+        .order_by(Declaration.annee.desc(), Declaration.mois.desc(), User.nom)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # 4. Génération du CSV
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';')
+    # En-tête (13 colonnes)
+    writer.writerow(["Nom", "Prénom", "Site", "Statut", "Mois", "Année", "Prog", "Mission", "Sous-Mission", "Qté", "Unité", "Tarif", "Total"])
+
+    for r in rows:
+        # Conversion sécurisée des Enums (Statut, Site, Programme)
+        s_text = r.statut.value if hasattr(r.statut, 'value') else str(r.statut)
+        site_text = r.site.value if hasattr(r.site, 'value') else str(r.site)
+        prog_text = r.programme.value if hasattr(r.programme, 'value') else str(r.programme)
+
+        writer.writerow([
+            r.nom or "N/A", 
+            r.prenom or "N/A", 
+            site_text, 
+            s_text, 
+            r.mois, 
+            r.annee, 
+            prog_text,
+            r.m_titre, 
+            r.sm_titre,
+            str(r.quantite).replace('.', ','), 
+            r.unite or "unité",
+            str(r.tarif_unit).replace('.', ','), 
+            str(round(r.total_ligne, 2)).replace('.', ',')
+        ])
+
+    # BOM UTF-8 pour Excel et retour du flux
+    content = "\ufeff" + output.getvalue()
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=export_stats.csv"}
     )
 
 # --- GESTION DES UTILISATEURS ---
@@ -197,33 +475,6 @@ async def create_user(
         print(f"Erreur lors de la création : {e}")
         return RedirectResponse("/admin/users?error=db_error", status_code=303)
 
-@router.get("/users/{user_id}/edit", response_class=HTMLResponse)
-async def edit_user_form(
-    request: Request, 
-    user_id: int, 
-    current_user: User = Depends(staff_required), 
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(select(User).where(User.id == user_id))
-    edit_user = result.scalar_one_or_none()
-    if not edit_user: 
-        return RedirectResponse("/admin/users", status_code=303)
-    
-    f = get_fernet()
-    nss = decrypt(edit_user.nss_encrypted or "", f)
-    iban = decrypt(edit_user.iban_encrypted or "", f)
-    
-    return templates.TemplateResponse("admin/user_form.html", {
-        "request": request, 
-        "current_user": current_user, 
-        "edit_user": edit_user, 
-        "roles": list(Role),
-        "sites": list(Site),
-        "programmes": list(Programme),
-        "nss": nss, 
-        "iban": iban
-    })
-
 @router.post("/users/{user_id}/edit")
 async def edit_user_save(
     user_id: int,
@@ -292,55 +543,79 @@ async def activate_user(
 # --- EXPORT CSV ---
 @router.get("/export/csv")
 async def export_declarations_csv(
-    
-    mois: int | None = None,
-    annee: int | None = None,
-    site: str | None = None,
+    start_mois: int = Query(1),
+    start_annee: int = Query(2025),
+    end_mois: int = Query(12),
+    end_annee: int = Query(2025),
+    programme: Optional[str] = Query(None),
+    matiere: Optional[str] = Query(None),
+    mission_nom: Optional[str] = Query(None),
+    statut: Optional[str] = Query(None),
     current_user: User = Depends(staff_required),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Base de la requête
+    # 1. Calcul de la période glissante (indispensable pour la cohérence)
+    start_val = start_annee * 100 + start_mois
+    end_val = end_annee * 100 + end_mois
+
+    # 2. Base de la requête avec OUTERJOIN pour ne rien perdre
     stmt = (
         select(LigneDeclaration, Declaration, User, SousMission, Mission)
         .join(Declaration, LigneDeclaration.declaration_id == Declaration.id)
         .join(User, Declaration.user_id == User.id)
         .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .join(Mission, SousMission.mission_id == Mission.id)
-        .where(Declaration.statut == StatutDeclaration.validee)
+        .outerjoin(Mission, SousMission.mission_id == Mission.id) # Outerjoin au cas où
     )
 
-    # 2. Application des filtres dynamiques
-    if annee:
-        stmt = stmt.where(Declaration.annee == annee)
-    if mois:
-        stmt = stmt.where(Declaration.mois == mois)
-    if site:
-        stmt = stmt.where(Declaration.site == site)
+    # 3. Application des filtres synchronisés avec le dashboard
+    filters = [
+        (Declaration.annee * 100 + Declaration.mois) >= start_val,
+        (Declaration.annee * 100 + Declaration.mois) <= end_val
+    ]
 
-    # 3. Tri final
-    stmt = stmt.order_by(Declaration.id.desc())
+    # --- 2. LOGIQUE DES STATUTS (SÉCURISÉE AU MAXIMUM) ---
+    if statut == "validee":
+        # On cherche par la valeur texte brute
+        filters.append(Declaration.statut.cast(String).like("%validee%"))
+    elif statut == "soumise":
+        filters.append(Declaration.statut.cast(String).like("%soumise%"))
+    else:
+        # On prend tout ce qui contient 'validee' OU 'soumise'
+        filters.append(
+            or_(
+                Declaration.statut.cast(String).like("%validee%"),
+                Declaration.statut.cast(String).like("%soumise%")
+            )
+        )
+
+    if programme:
+        filters.append(User.programme == programme) # On filtre sur User
+    if matiere:
+        filters.append(User.matiere == matiere)
     
+    # Appliquer tous les filtres
+    stmt = stmt.where(and_(*filters))
+
+    # 4. Exécution
     result = await db.execute(stmt)
     rows = result.all()
 
+    # 5. Génération CSV (avec UTF-8-SIG pour Excel)
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
-    writer.writerow(["Date", "Collaborateur", "Rôle", "Site", "Programme", "Matière", "Mission", "Sous-Mission", "Quantité", "Tarif", "Total Brut"])
+    writer.writerow(["Mois/Année", "Collaborateur", "Site", "Prog", "Mission", "Sous-Mission", "Quantité", "Total Brut"])
 
     for ligne_dec, dec, u, sm, m in rows:
         total_ligne = ligne_dec.quantite * sm.tarif
-        date_display = dec.created_at.strftime("%d/%m/%Y") if dec.created_at else "N/C"
         writer.writerow([
-            date_display,
-            f"{u.prenom} {u.nom}" if (u.prenom or u.nom) else u.email,
-            u.role.value.upper(),
-            dec.site.value if u.site else "N/C",
-            dec.programme.value if u.programme else "N/C",
-            u.matiere or "N/C",
-            m.titre, sm.titre,
+            f"{dec.mois}/{dec.annee}",
+            f"{u.prenom} {u.nom}",
+            u.site.value if u.site else "N/C",
+            u.programme.value if u.programme else "N/C",
+            m.titre if m else "N/C", 
+            sm.titre,
             str(ligne_dec.quantite).replace('.', ','),
-            str(sm.tarif).replace('.', ','),
-            str(total_ligne).replace('.', ',')
+            str(round(total_ligne, 2)).replace('.', ',')
         ])
 
     filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
@@ -349,119 +624,6 @@ async def export_declarations_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
-# --- GÉNÉRATION DES FACTURES ---
-@router.post("/generate-factures")
-async def generate_factures(
-    date_debut: str = Form(...),
-    date_fin: str = Form(...),
-    current_user: User = Depends(staff_required),
-    db: AsyncSession = Depends(get_db)
-):
-    try:
-        start_dt = datetime.strptime(date_debut, "%Y-%m-%d")
-        end_dt = datetime.strptime(date_fin, "%Y-%m-%d")
-    except ValueError:
-        return RedirectResponse(url="/admin/stats?error=invalid_date", status_code=303)
-
-    stmt = (
-        select(User, func.sum(LigneDeclaration.quantite * SousMission.tarif).label("total_brut"))
-        .join(Declaration, User.id == Declaration.user_id)
-        .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
-        .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .where(
-            Declaration.statut == StatutDeclaration.validee,
-            Declaration.created_at >= start_dt,
-            Declaration.created_at <= end_dt
-        )
-        .group_by(User.id)
-    )
-    
-    result = await db.execute(stmt)
-    rows = result.all()
-
-    if not rows:
-        return RedirectResponse(url="/admin/stats?warning=no_data_period", status_code=303)
-
-    f_fernet = get_fernet()
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for u, total_brut in rows:
-            nss_decrypte = decrypt(u.nss_encrypted or "", f_fernet)
-            context = {
-                "user_fullname": f"{u.prenom} {u.nom}".upper() if (u.prenom or u.nom) else u.email,
-                "user_nss": nss_decrypte or "Non renseigné",
-                "user_address": u.adresse or "Adresse non renseignée",
-                "user_cp_ville": f"{u.code_postal or ''} {u.ville or ''}",
-                "date_facture": datetime.now().strftime("%d/%m/%Y"),
-                "programme": u.programme.value if u.programme else "PASS",
-                "matiere": u.matiere or "Supports pédagogiques",
-                "total_du": f"{total_brut:.2f}".replace('.', ',')
-            }
-            html_content = templates.get_template("admin/invoice_pdf.html").render(context)
-            pdf_data = HTML(string=html_content).write_pdf()
-            filename = f"Facture_{u.nom}_{u.prenom}_{datetime.now().strftime('%Y%m%d')}.pdf"
-            zip_file.writestr(filename, pdf_data)
-
-    zip_buffer.seek(0)
-    return StreamingResponse(zip_buffer, media_type="application/x-zip-compressed", headers={"Content-Disposition": "attachment; filename=Factures_Avicenne.zip"})
-
-# --- SAISIE DE DÉCLARATION POUR UN TIERS ---
-@router.get("/declarations/create", response_class=HTMLResponse)
-async def admin_create_declaration_form(
-    request: Request,
-    user_id: int,
-    current_user: User = Depends(staff_required),
-    db: AsyncSession = Depends(get_db)
-):
-    # 1. Récupération de l'utilisateur cible
-    result = await db.execute(select(User).where(User.id == user_id))
-    target_user = result.scalar_one_or_none()
-    
-    if not target_user:
-        return RedirectResponse("/admin/users", status_code=303)
-
-    # 2. Récupération des missions ET de leurs sous-missions (le secret est ici)
-    stmt_missions = select(Mission).options(selectinload(Mission.sous_missions))
-    res_missions = await db.execute(stmt_missions)
-    missions = res_missions.scalars().all()
-
-    # 3. Préparation des données
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    mois_labels = {
-        1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
-        5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
-        9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre"
-    }
-
-    return templates.TemplateResponse("admin/declaration_directe.html", {
-        "request": request,
-        "current_user": current_user,
-        "target_user": target_user,
-        "missions": missions,
-        "today_date": today_str,
-        "mois_labels": mois_labels,
-        "default_mois": datetime.now().month,
-        "default_annee": datetime.now().year
-    })
-
-@router.post("/declarations/save")
-async def admin_save_declaration(
-    user_id: int = Form(...),
-    date_declaration: str = Form(...),
-    mission_ids: List[int] = Form(...),
-    quantites: List[float] = Form(...),
-    current_user: User = Depends(staff_required),
-    db: AsyncSession = Depends(get_db)
-):
-    new_dec = Declaration(user_id=user_id, statut=StatutDeclaration.en_attente, created_at=datetime.strptime(date_declaration, "%Y-%m-%d"))
-    db.add(new_dec)
-    await db.flush()
-    for m_id, qty in zip(mission_ids, quantites):
-        if qty > 0:
-            db.add(LigneDeclaration(declaration_id=new_dec.id, sous_mission_id=m_id, quantite=qty))
-    await db.commit()
-    return RedirectResponse("/admin/users?msg=success", status_code=303)
 
 # --- MISE À JOUR STATUT & COMMENTAIRE ---
 @router.post("/declarations/{declaration_id}/update")
@@ -539,5 +701,97 @@ async def admin_add_sub_mission(
         is_active=True
     )
     db.add(new_sm)
+    await db.commit()
+    return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
+
+@router.get("/users/{user_id}/edit", response_class=HTMLResponse)
+async def edit_user_form(
+    request: Request, 
+    user_id: int, 
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(check_admin)
+):
+    user_to_edit = await db.get(User, user_id)
+    if not user_to_edit:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    # Préparation des Enums pour le template
+    clean_matieres = {str(k): v for k, v in MATIERES.items()}
+
+    return templates.TemplateResponse("admin/user_form.html", {
+        "request": request,
+        "u": user_to_edit,
+        "user": current_admin, # Admin connecté
+        "roles": [r.value for r in Role],
+        "sites": [s.value for s in Site],
+        "programmes": [p.value for p in Programme],
+        "filieres": [f.value for f in Filiere],
+        "annees": [a.value for a in Annee],
+        "matieres_par_prog": clean_matieres
+    })
+
+@router.post("/users/{user_id}/edit")
+async def edit_user_post(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(check_admin),
+    email: str = Form(...),
+    nom: Optional[str] = Form(None),
+    prenom: Optional[str] = Form(None),
+    role: str = Form(...),
+    site: Optional[str] = Form(None),
+    filiere: Optional[str] = Form(None),
+    annee: Optional[str] = Form(None),
+    programme: Optional[str] = Form(None),
+    matiere: Optional[str] = Form(None),
+    password: Optional[str] = Form(None)
+):
+    user_to_update = await db.get(User, user_id)
+    if not user_to_update:
+        return RedirectResponse(url="/admin/users?error=notfound", status_code=303)
+
+    try:
+        # 1. Champs texte
+        user_to_update.email = email.lower().strip()
+        user_to_update.nom = nom.upper() if nom else None
+        user_to_update.prenom = prenom.capitalize() if prenom else None
+        user_to_update.matiere = matiere if matiere else None
+
+        # 2. Enums (Conversion sécurisée)
+        user_to_update.role = Role(role)
+        user_to_update.site = Site(site) if site else None
+        user_to_update.filiere = Filiere(filiere) if filiere else None
+        user_to_update.annee = Annee(annee) if annee else None
+        user_to_update.programme = Programme(programme) if programme else None
+
+        # 3. Mot de passe (Uniquement si rempli)
+        if password and len(password.strip()) >= 8:
+            user_to_update.hashed_password = pwd_context.hash(password)
+
+        await db.commit()
+        return RedirectResponse(url="/admin/users?msg=updated", status_code=303)
+
+    except IntegrityError:
+        await db.rollback()
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=email_exists", status_code=303)
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Donnée invalide : {str(e)}")
+    
+@router.post("/referentiel/missions/{mission_id}/toggle-active")
+async def toggle_mission_active(
+    mission_id: int, 
+    db: AsyncSession = Depends(get_db)
+):
+    # On récupère la mission parent
+    result = await db.execute(select(Mission).where(Mission.id == mission_id))
+    mission = result.scalar_one_or_none()
+
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission non trouvée")
+
+    # On inverse l'état (True -> False ou False -> True)
+    mission.is_active = not mission.is_active
+
     await db.commit()
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)

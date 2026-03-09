@@ -1,137 +1,120 @@
 {% extends "base.html" %}
 
-{% block title %}
-    {% if edit_user %}Modifier {{ edit_user.email }}{% else %}Nouvel Utilisateur{% endif %} – Avicenne
-{% endblock %}
+{% block title %}Modifier Profil – {{ u.email }}{% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            
-            {# --- FIL D'ARIANE / RETOUR --- #}
-            <nav aria-label="breadcrumb" class="mb-4">
-                <a href="/admin/users" class="text-decoration-none text-muted">
-                    <i class="bi bi-arrow-left"></i> Retour à la liste des utilisateurs
-                </a>
-            </nav>
+<div class="container py-4">
+    {# --- FIL D'ARIANE --- #}
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin/users" class="text-decoration-none">Gestion des Utilisateurs</a></li>
+            <li class="breadcrumb-item active">Édition de {{ u.prenom or u.email }}</li>
+        </ol>
+    </nav>
 
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
             <div class="card shadow-sm border-0">
-                <div class="card-header bg-white border-bottom py-3">
-                    <h1 class="h4 mb-0 fw-bold">
-                        {% if edit_user %}
-                            <i class="bi bi-pencil-square text-primary me-2"></i> Modifier le profil
-                        {% else %}
-                            <i class="bi bi-person-plus-fill text-success me-2"></i> Créer un nouvel utilisateur
-                        {% endif %}
-                    </h1>
+                <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-person-gear me-2"></i>Modifier le profil collaborateur</h5>
+                    <span class="badge {{ 'bg-success' if u.is_active else 'bg-secondary' }}">
+                        {{ 'Actif' if u.is_active else 'Inactif' }}
+                    </span>
                 </div>
 
-                <div class="card-body p-4">
-                    <form method="post" action="/admin/users/{% if edit_user %}{{ edit_user.id }}/edit{% else %}create{% endif %}">
+                <div class="card-body p-4 bg-light">
+                    <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-3">
                         
-                        {# --- SECTION 1 : ACCÈS --- #}
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <h5 class="text-uppercase small fw-bold text-muted mb-3 border-bottom pb-2">Identifiants de connexion</h5>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label fw-semibold">Adresse Email *</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
-                                    <input type="email" name="email" class="form-control" value="{{ edit_user.email if edit_user else '' }}" required placeholder="nom@exemple.com">
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label fw-semibold">
-                                    Mot de passe 
-                                    {% if edit_user %}<span class="badge bg-light text-muted fw-normal">Optionnel</span>{% else %}*{% endif %}
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="bi bi-lock"></i></span>
-                                    <input type="password" name="password" class="form-control" {% if not edit_user %}required{% endif %} minlength="8" placeholder="********">
-                                </div>
-                                {% if edit_user %}
-                                <div class="form-text small text-info">Laissez vide pour conserver le mot de passe actuel.</div>
-                                {% endif %}
-                            </div>
+                        {# --- SECTION 1 : IDENTITÉ --- #}
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-uppercase">Prénom</label>
+                            <input type="text" name="prenom" class="form-control" value="{{ u.prenom or '' }}" placeholder="Prénom">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-uppercase">Nom</label>
+                            <input type="text" name="nom" class="form-control" value="{{ u.nom or '' }}" placeholder="NOM">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-uppercase">Email</label>
+                            <input type="email" name="email" class="form-control" value="{{ u.email }}" required>
                         </div>
 
-                        {# --- SECTION 2 : DROITS ET AFFECTATION --- #}
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <h5 class="text-uppercase small fw-bold text-muted mb-3 border-bottom pb-2">Rôle et Périmètre d'action</h5>
-                            </div>
-                            
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label fw-semibold">Rôle attribué *</label>
-                                <select name="role" class="form-select border-primary-subtle" required>
-                                    {% for r in roles %}
-                                    <option value="{{ r.value }}" {% if edit_user and edit_user.role == r %}selected{% endif %}>
-                                        {{ r.value | upper }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
+                        <hr class="my-3 text-muted">
 
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label fw-semibold">Site</label>
-                                <select name="site" class="form-select">
-                                    <option value="">-- Aucun site --</option>
-                                    {% for s in sites %}
-                                    <option value="{{ s.value }}" {% if edit_user and edit_user.site == s %}selected{% endif %}>
-                                        {{ s.value }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label fw-semibold">Programme</label>
-                                <select name="programme" class="form-select">
-                                    <option value="">-- Aucun programme --</option>
-                                    {% for p in programmes %}
-                                    <option value="{{ p.value }}" {% if edit_user and edit_user.programme == p %}selected{% endif %}>
-                                        {{ p.value }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label fw-semibold">Matière Spécifique</label>
-                                <input type="text" name="matiere" class="form-control" value="{{ edit_user.matiere if edit_user and edit_user.matiere else '' }}" placeholder="Ex: UE_1, Biophysique, Droit...">
-                                <div class="form-text italic">Saisir le nom exact tel que défini dans le référentiel.</div>
-                            </div>
+                        {# --- SECTION 2 : RÔLE & SITE --- #}
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-uppercase text-primary">Rôle Système</label>
+                            <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm">
+                                {% for r in roles %}
+                                {# CORRECTION : Utilisation de |string pour éviter le crash .value #}
+                                <option value="{{ r }}" {% if u.role|string == r|string %}selected{% endif %}>{{ r|upper }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
 
-                        {# --- SECTION 3 : INFOS ADMINISTRATIVES (Lecture seule ou info) --- #}
-                        {% if edit_user %}
-                        <div class="row mb-4">
-                            <div class="col-md-12">
-                                <h5 class="text-uppercase small fw-bold text-muted mb-3 border-bottom pb-2">Informations de profil (Récapitulatif)</h5>
-                                <div class="bg-light p-3 rounded border">
-                                    <div class="row">
-                                        <div class="col-md-6 mb-2"><strong>NSS :</strong> {{ nss if nss else 'Non renseigné' }}</div>
-                                        <div class="col-md-6 mb-2"><strong>IBAN :</strong> {{ iban if iban else 'Non renseigné' }}</div>
+                        <div class="col-md-6 section-collaborateur">
+                            <label class="form-label small fw-bold text-uppercase">Site d'affectation</label>
+                            <select name="site" class="form-select shadow-sm">
+                                <option value="">-- Aucun site --</option>
+                                {% for s in sites %}
+                                <option value="{{ s }}" {% if u.site|string == s|string %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        {# --- SECTION 3 : PARCOURS (FILIÈRE / ANNÉE) --- #}
+                        <div class="col-md-6 section-collaborateur">
+                            <label class="form-label small fw-bold text-uppercase">Filière</label>
+                            <select name="filiere" class="form-select shadow-sm">
+                                <option value="">-- Choisir --</option>
+                                {% for f in filieres %}
+                                <option value="{{ f }}" {% if u.filiere|string == f|string %}selected{% endif %}>{{ f }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-md-6 section-collaborateur">
+                            <label class="form-label small fw-bold text-uppercase">Année d'étude</label>
+                            <select name="annee" class="form-select shadow-sm">
+                                <option value="">-- Choisir --</option>
+                                {% for a in annees %}
+                                <option value="{{ a }}" {% if u.annee|string == a|string %}selected{% endif %}>{{ a }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        {# --- SECTION 4 : PÉRIMÈTRE D'ENSEIGNEMENT --- #}
+                        <div class="col-12 section-collaborateur mt-4">
+                            <div class="card border-0 shadow-sm bg-white">
+                                <div class="card-body row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold"><i class="bi bi-book me-1"></i>Programme</label>
+                                        <select name="programme" id="programmeSelect" class="form-select">
+                                            <option value="">-- Sélectionner un programme --</option>
+                                            {% for p in programmes %}
+                                            <option value="{{ p }}" {% if u.programme|string == p|string %}selected{% endif %}>{{ p }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold"><i class="bi bi-tags me-1"></i>Matière / UE</label>
+                                        <select name="matiere" id="matiereSelect" class="form-select">
+                                            {# Rempli dynamiquement par JS #}
+                                        </select>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        {% endif %}
 
-                        <hr class="my-4">
-
-                        <div class="d-flex justify-content-between align-items-center">
-                            <a href="/admin/users" class="btn btn-light px-4 border text-secondary">
-                                Annuler
+                        {# --- ACTIONS --- #}
+                        <div class="col-12 d-flex justify-content-between mt-5">
+                            <a href="/admin/users" class="btn btn-outline-secondary px-4">
+                                <i class="bi bi-x-circle me-1"></i> Annuler
                             </a>
                             <button type="submit" class="btn btn-primary px-5 shadow">
-                                <i class="bi bi-save2 me-2"></i> 
-                                {% if edit_user %}Enregistrer les modifications{% else %}Créer l'utilisateur{% endif %}
+                                <i class="bi bi-check2-circle me-1"></i> Enregistrer les modifications
                             </button>
                         </div>
-
                     </form>
                 </div>
             </div>
@@ -139,10 +122,51 @@
     </div>
 </div>
 
-<style>
-    .form-label { font-size: 0.9rem; }
-    .input-group-text { color: #6c757d; }
-    .form-select, .form-control { border-radius: 0.4rem; padding: 0.6rem 0.75rem; }
-</style>
+{# --- DATA BRIDGE --- #}
+<div id="data-bridge" 
+     data-matieres='{{ matieres_par_prog | tojson | safe }}'
+     data-current-matiere="{{ u.matiere or '' }}"
+     style="display: none;">
+</div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const bridge = document.getElementById('data-bridge');
+    const MATIERES_DATA = JSON.parse(bridge.dataset.matieres);
+    const CURRENT_MATIERE = bridge.dataset.currentMatiere;
+
+    const progSelect = document.getElementById('programmeSelect');
+    const matSelect = document.getElementById('matiereSelect');
+    const roleSelect = document.getElementById('roleSelect');
+    const sectionsCollab = document.querySelectorAll('.section-collaborateur');
+
+    function updateMatieres() {
+        const selectedProg = progSelect.value;
+        matSelect.innerHTML = '<option value="">-- Sélectionner une matière --</option>';
+
+        if (selectedProg && MATIERES_DATA[selectedProg]) {
+            MATIERES_DATA[selectedProg].forEach(function(m) {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                if (m === CURRENT_MATIERE) opt.selected = true;
+                matSelect.appendChild(opt);
+            });
+        }
+    }
+
+    function checkRole() {
+        const isExcluded = (roleSelect.value === 'admin');
+        sectionsCollab.forEach(function(section) {
+            section.style.display = isExcluded ? 'none' : 'block';
+        });
+    }
+
+    progSelect.addEventListener('change', updateMatieres);
+    roleSelect.addEventListener('change', checkRole);
+
+    checkRole();
+    updateMatieres();
+});
+</script>
 {% endblock %}

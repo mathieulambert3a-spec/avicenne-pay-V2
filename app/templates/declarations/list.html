@@ -31,51 +31,70 @@
     </div>
 
     {# --- ZONE DE FILTRES --- #}
-    {% if user.role.value in ['admin', 'coordo', 'resp'] %}
-    <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-3">
-            <form method="get" action="/declarations" class="row g-2 align-items-end">
-                <div class="col-md-3">
-                    <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Site</label>
-                    <select name="site" class="form-select form-select-sm border-light-subtle">
-                        <option value="">Tous les sites</option>
-                        {% for s in sites %}
-                        <option value="{{ s.value }}" {% if current_site == s.value %}selected{% endif %}>{{ s.value }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Mois</label>
-                    <select name="mois" class="form-select form-select-sm border-light-subtle">
-                        <option value="">Tous les mois</option>
-                        {% for num, label in mois_labels.items() %}
-                        <option value="{{ num }}" {% if current_mois == num %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Année</label>
-                    <input type="number" name="annee" class="form-control form-control-sm border-light-subtle" value="{{ current_annee or '' }}" placeholder="Ex: 2026">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Statut</label>
-                    <select name="statut" class="form-select form-select-sm border-light-subtle">
-                        <option value="">Tous statuts</option>
-                        {% for s in statuts %}
-                        <option value="{{ s.value }}" {% if current_statut == s.value %}selected{% endif %}>{{ s.value|capitalize }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex gap-2">
-                    <button type="submit" class="btn btn-dark btn-sm flex-grow-1"><i class="bi bi-filter me-1"></i> Filtrer</button>
-                    <a href="/declarations" class="btn btn-outline-secondary btn-sm" title="Réinitialiser"><i class="bi bi-arrow-counterclockwise"></i></a>
-                </div>
-            </form>
-        </div>
-    </div>
-    {% endif %}
+{% if user.role.value in ['admin', 'coordo', 'resp'] %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-3">
+        <form method="get" action="/declarations" class="row g-2 align-items-end">
+            {# On conserve l'ID utilisateur si un filtre collaborateur est actif #}
+            {% if current_user_id %}
+            <input type="hidden" name="user_id" value="{{ current_user_id }}">
+            {% endif %}
 
-    {# --- BANDEAU DE FILTRE UTILISATEUR (A ajouter ici) --- #}
+            {# FILTRE SITE : Affiché uniquement pour l'ADMIN #}
+            {% if user.role.value == 'admin' %}
+            <div class="col-md-3">
+                <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Site</label>
+                <select name="site" class="form-select form-select-sm border-light-subtle">
+                    <option value="">Tous les sites</option>
+                    {% for s in sites %}
+                    <option value="{{ s.value }}" {% if current_site == s.value %}selected{% endif %}>
+                        {{ s.value }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+                {# Pour les Coordo/Resp, on peut passer le site en champ caché si nécessaire, 
+                   mais le Python le gère déjà via current_user.site #}
+                <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
+            {% endif %}
+
+            {# Les autres filtres s'adaptent en largeur selon si le filtre Site est présent ou non #}
+            <div class="{{ 'col-md-2' if user.role.value == 'admin' else 'col-md-3' }}">
+                <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Mois</label>
+                <select name="mois" class="form-select form-select-sm border-light-subtle">
+                    <option value="">Tous les mois</option>
+                    {% for num, label in mois_labels.items() %}
+                    <option value="{{ num }}" {% if current_mois|string == num|string %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="{{ 'col-md-2' if user.role.value == 'admin' else 'col-md-3' }}">
+                <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Année</label>
+                <input type="number" name="annee" class="form-control form-control-sm border-light-subtle" value="{{ current_annee or '' }}" placeholder="Ex: 2026">
+            </div>
+
+            <div class="{{ 'col-md-2' if user.role.value == 'admin' else 'col-md-3' }}">
+                <label class="form-label x-small fw-bold text-muted text-uppercase ms-1">Statut</label>
+                <select name="statut" class="form-select form-select-sm border-light-subtle">
+                    <option value="">Tous statuts</option>
+                    {% for s in statuts %}
+                    <option value="{{ s.value }}" {% if current_statut == s.value %}selected{% endif %}>{{ s.value|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-dark btn-sm flex-grow-1"><i class="bi bi-filter me-1"></i> Filtrer</button>
+                <a href="/declarations{{ '?user_id=' ~ current_user_id if current_user_id else '' }}" class="btn btn-outline-secondary btn-sm" title="Réinitialiser"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+    {# --- BANDEAU DE FILTRE UTILISATEUR --- #}
     {% if selected_user %}
     <div class="alert alert-info d-flex justify-content-between align-items-center shadow-sm border-0 border-start border-4 border-info mb-4">
         <div>
@@ -100,12 +119,22 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="bg-light">
-                    <tr>
-                        <th class="ps-4">Collaborateur</th>
-                        <th>Période</th>
-                        <th>Site & Programme</th>
-                        <th class="text-center">Statut</th>
-                        <th>Soumission</th>
+                    <tr class="text-uppercase x-small fw-bold text-muted">
+                        <th class="ps-4 py-3 sortable" onclick="sortTable(0)" style="cursor: pointer;">
+                            Collaborateur <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="sortable" onclick="sortTable(1)" style="cursor: pointer;">
+                            Période <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="sortable" onclick="sortTable(2)" style="cursor: pointer;">
+                            Site & Prog. <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="text-center sortable" onclick="sortTable(3)" style="cursor: pointer;">
+                            Statut <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="sortable" onclick="sortTable(4)" style="cursor: pointer;">
+                            Soumise <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
@@ -181,8 +210,8 @@
                                 {% endif %}
                                 
                                 {% if user.role.value == 'admin' %}
-                                <form action="/declarations/{{ decl.id }}/delete" method="post" class="d-inline" onclick="confirmDelete(this)">
-                                    <button type="button" class="btn btn-white text-danger">
+                                <form action="/declarations/{{ decl.id }}/delete" method="post" class="d-inline" onclick="return confirmDelete(this)">
+                                    <button type="submit" class="btn btn-white text-danger">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
@@ -199,6 +228,23 @@
 </div>
 
 <script>
+function confirmDelete(form) {
+    Swal.fire({
+        title: 'Supprimer ?',
+        text: "Cette action est irréversible.",
+        icon: 'danger',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Oui, supprimer'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            form.submit();
+        }
+    });
+    return false;
+}
+
 function rejeterDeclaration(id) {
     Swal.fire({
         title: 'Motif du rejet',
@@ -211,33 +257,90 @@ function rejeterDeclaration(id) {
         cancelButtonColor: '#6c757d',
         confirmButtonText: '<span class="text-dark fw-bold">Confirmer le rejet</span>',
         cancelButtonText: 'Annuler',
-        showLoaderOnConfirm: true, // Affiche le spinner au clic
+        showLoaderOnConfirm: true,
         preConfirm: (motif) => {
-            // Validation interne à SweetAlert
             if (!motif || motif.trim().length < 5) {
                 Swal.showValidationMessage('Le motif doit contenir au moins 5 caractères');
                 return false;
             }
             return motif;
         },
-        allowOutsideClick: () => !Swal.isLoading() // Empêche de fermer pendant l'envoi
+        allowOutsideClick: () => !Swal.isLoading()
     }).then((result) => {
         if (result.isConfirmed) {
-            // On force l'affichage du chargement pendant que le navigateur soumet le formulaire
             Swal.showLoading(); 
-
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = `/declarations/${id}/rejeter`;
-            
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = 'commentaire_admin';
             input.value = result.value;
-            
             form.appendChild(input);
             document.body.appendChild(form);
             form.submit();
+        }
+    });
+}
+
+function sortTable(n) {
+    var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+    table = document.querySelector(".table");
+    switching = true;
+    dir = "asc";
+    
+    while (switching) {
+        switching = false;
+        rows = table.rows;
+        
+        for (i = 1; i < (rows.length - 1); i++) {
+            shouldSwitch = false;
+            x = rows[i].getElementsByTagName("TD")[n];
+            y = rows[i + 1].getElementsByTagName("TD")[n];
+            
+            let xText = x.innerText.trim().toLowerCase();
+            let yText = y.innerText.trim().toLowerCase();
+
+            if (n === 3) { 
+                xText = x.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
+                yText = y.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
+            } 
+            else if (n === 4) { 
+                const parseDate = (txt) => {
+                    const p = txt.split('/');
+                    return p.length === 3 ? p[2] + p[1] + p[0] : "00000000";
+                };
+                xText = parseDate(xText);
+                yText = parseDate(yText);
+            }
+
+            if (dir == "asc") {
+                if (xText > yText) { shouldSwitch = true; break; }
+            } else if (dir == "desc") {
+                if (xText < yText) { shouldSwitch = true; break; }
+            }
+        }
+        
+        if (shouldSwitch) {
+            rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+            switching = true;
+            switchcount++;
+        } else {
+            if (switchcount == 0 && dir == "asc") {
+                dir = "desc";
+                switching = true;
+            }
+        }
+    }
+    updateSortIcons(n, dir);
+}
+
+function updateSortIcons(columnIndex, direction) {
+    const headers = document.querySelectorAll('th.sortable i');
+    headers.forEach((icon, index) => {
+        icon.className = 'bi bi-arrow-down-up ms-1 small text-muted';
+        if (index === columnIndex) {
+            icon.className = direction === 'asc' ? 'bi bi-sort-alpha-down text-primary' : 'bi bi-sort-alpha-up-alt text-primary';
         }
     });
 }

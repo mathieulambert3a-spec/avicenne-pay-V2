@@ -92,8 +92,6 @@ async def update_profile(
         current_user.iban_encrypted = encrypt(iban, f)
 
     # --- Affectations Académiques ---
-    # On utilise des blocs conditionnels pour éviter d'écraser par du vide 
-    # si le champ n'est pas présent dans le formulaire (cas du Coordo)
     if site:
         current_user.site = Site(site)
     
@@ -101,14 +99,38 @@ async def update_profile(
         current_user.programme = Programme(programme)
         current_user.matiere = matiere or None
     
-    # Enums optionnels
     if filiere:
         current_user.filiere = Filiere(filiere)
     if annee:
         current_user.annee = Annee(annee)
 
     # --- Statut de complétude ---
-    current_user.profil_complete = (profil_complete == "on")
+    success_msg = "Profil mis à jour avec succès."
+    
+    if profil_complete == "on":
+        # 1. Champs obligatoires pour TOUT LE MONDE (Coordo, Resp, TCP)
+        champs_communs = [current_user.nom, current_user.prenom, current_user.ville]
+        base_ok = all(val and str(val).strip() for val in champs_communs)
+
+        # 2. Champs spécifiques au PAIEMENT (Uniquement pour Resp et TCP)
+        paiement_ok = True
+        if current_user.role.value in ['resp', 'tcp']:
+            champs_paiement = [current_user.nss_encrypted, current_user.iban_encrypted]
+            paiement_ok = all(val and str(val).strip() for val in champs_paiement)
+
+        # 3. Validation finale
+        if base_ok and paiement_ok:
+            current_user.profil_complete = True
+            success_msg = "Profil validé et finalisé !"
+        else:
+            current_user.profil_complete = False
+            if not paiement_ok:
+                success_msg = "Profil sauvegardé, mais incomplet : les informations de paiement sont obligatoires pour vos vacations."
+            else:
+                success_msg = "Profil sauvegardé, mais incomplet : veuillez remplir les champs d'identité obligatoires."
+    else:
+        current_user.profil_complete = False
+        success_msg = "Modifications enregistrées en brouillon."
 
     await db.commit()
     await db.refresh(current_user)
@@ -129,6 +151,6 @@ async def update_profile(
             "sites": list(Site),
             "programmes": list(Programme),
             "matieres": MATIERES,
-            "success": "Profil mis à jour avec succès.",
+            "success": success_msg,
         },
     )

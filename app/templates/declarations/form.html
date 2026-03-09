@@ -75,85 +75,90 @@
 
         {# --- LISTE DES MISSIONS --- #}
         {% for mission in missions %}
-            {% set active_sms = mission.sous_missions | selectattr('is_active') | list %}
-            
-            {% if active_sms %}
-            <div class="card mb-4 border-0 shadow-sm overflow-hidden">
-                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
-                    <span class="fw-bold"><i class="bi bi-folder2-open me-2 text-warning"></i>{{ mission.titre }}</span>
-                    {% if mission.resp_only %}
-                        <span class="badge bg-warning text-dark px-3 rounded-pill border border-dark">
-                            <i class="bi bi-shield-lock-fill me-1"></i> Forfaits Responsable
-                        </span>
-                    {% endif %}
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr class="small text-muted text-uppercase">
-                                <th class="ps-4 py-3">Détail de la prestation</th>
-                                <th style="width:160px">Tarif Unitaire</th>
-                                <th style="width:220px">Quantité / Volume</th>
-                                <th style="width:160px" class="text-end pe-4">Montant</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for sm in active_sms | sort(attribute='ordre') %}
-                            <tr>
-                                <td class="ps-4">
-                                    <div class="fw-bold text-dark">{{ sm.titre }}</div>
-                                    <div class="text-muted small">
-                                        {% if sm.description %}
-                                            {{ sm.description }}
-                                        {% else %}
-                                            <span class="badge bg-light text-muted border-0 p-0">Code : {{ sm.code_sage or 'N/A' }}</span>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="text-dark fw-medium">{{ "%.2f"|format(sm.tarif) }} €</span>
-                                    <div class="text-muted small">{{ sm.unite or 'unité' }}</div>
-                                </td>
-                                <td>
-                                    {% if mission.resp_only %}
+        {# Si la mission est réservée aux RESP, on vérifie que l'utilisateur est bien un RESP #}
+        {% if mission.resp_only %}
+            {% if user.role.value == 'RESP' %}
+                {# BLOC AFFICHAGE MISSION RESP #}
+                <div class="card mb-4 border-0 shadow-sm overflow-hidden">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
+                        <span class="fw-bold"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>{{ mission.titre }}</span>
+                        <span class="badge bg-warning text-dark px-3 rounded-pill border border-dark small">Forfait Responsable</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <tbody>
+                                {% for sm in mission.sous_missions if sm.is_active %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-bold text-dark">{{ sm.titre }}</div>
+                                        <div class="text-muted small">Forfait mensuel fixe</div>
+                                    </td>
+                                    <td><span class="text-dark fw-medium">{{ "%.2f"|format(sm.tarif) }} €</span></td>
+                                    <td>
+                                        {# VALEUR FIXÉE ET VERROUILLÉE #}
                                         <input type="hidden" name="quantite_{{ sm.id }}" value="1">
                                         <input type="hidden" class="quantite-input" data-tarif="{{ sm.tarif }}" data-smid="{{ sm.id }}" value="1">
                                         <div class="badge bg-success-subtle text-success border border-success px-3 py-2 w-100 text-center">
-                                            <i class="bi bi-check-circle-fill me-1"></i> Forfait inclus (1)
+                                            <i class="bi bi-check-circle-fill me-1"></i> Forfait appliqué (1)
                                         </div>
-                                    {% else %}
-                                        <div class="input-group shadow-sm">
-                                            {# MODIFICATION ICI : type="text" + inputmode pour gérer les virgules proprement #}
-                                            <input type="text" name="quantite_{{ sm.id }}"
-                                                class="form-control quantite-input text-center fw-bold border-primary-subtle"
-                                                data-tarif="{{ sm.tarif }}"
-                                                data-smid="{{ sm.id }}"
-                                                inputmode="decimal"
-                                                value="{{ lignes_map.get(sm.id, '') }}"
-                                                placeholder="0">
-                                            <span class="input-group-text bg-light small fw-medium" style="min-width: 80px; justify-content: center;">
-                                                {{ sm.unite or 'unité' }}
-                                            </span>
-                                        </div>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end pe-4 fw-bold">
-                                    <span class="montant-cell text-primary" id="montant_{{ sm.id }}">0,00 €</span>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    </td>
+                                    <td class="text-end pe-4 fw-bold">
+                                        <span class="montant-cell text-success" id="montant_{{ sm.id }}">{{ "%.2f"|format(sm.tarif) }} €</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
             {% endif %}
         {% else %}
-            <div class="alert alert-info border-0 shadow-sm p-4 text-center">
-                <i class="bi bi-info-circle-fill fs-2 mb-3 d-block text-primary"></i>
-                <h5 class="alert-heading fw-bold">Aucune mission disponible</h5>
-                <p class="mb-0">Veuillez contacter votre coordinateur pour vérifier votre périmètre de mission.</p>
-            </div>
-        {% endfor %}
+            {# MISSIONS NORMALES (Accessibles à tout le monde : TCP et RESP) #}
+            {% set active_sms = mission.sous_missions | selectattr('is_active') | list %}
+            {% if active_sms %}
+                <div class="card mb-4 border-0 shadow-sm overflow-hidden">
+                    <div class="card-header bg-light border-bottom d-flex justify-content-between align-items-center py-3">
+                        <span class="fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-primary"></i>{{ mission.titre }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr class="small text-muted text-uppercase">
+                                    <th class="ps-4 py-3">Détail</th>
+                                    <th style="width:160px">Tarif</th>
+                                    <th style="width:220px">Quantité</th>
+                                    <th style="width:160px" class="text-end pe-4">Montant</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sm in active_sms | sort(attribute='ordre') %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-bold text-dark">{{ sm.titre }}</div>
+                                        <div class="text-muted small">{{ sm.code_sage or '' }}</div>
+                                    </td>
+                                    <td>{{ "%.2f"|format(sm.tarif) }} €</td>
+                                    <td>
+                                        <div class="input-group shadow-sm">
+                                            <input type="text" name="quantite_{{ sm.id }}"
+                                                class="form-control quantite-input text-center fw-bold border-primary-subtle"
+                                                data-tarif="{{ sm.tarif }}" data-smid="{{ sm.id }}"
+                                                inputmode="decimal" value="{{ lignes_map.get(sm.id, '') }}" placeholder="0">
+                                            <span class="input-group-text bg-light small" style="min-width: 80px;">{{ sm.unite or 'ut' }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="text-end pe-4 fw-bold">
+                                        <span class="montant-cell text-primary" id="montant_{{ sm.id }}">0,00 €</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+    {% endfor %}
 
         {# --- BARRE D'ACTIONS FIXE AU BAS --- #}
         <div class="sticky-bottom-container">

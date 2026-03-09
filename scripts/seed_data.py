@@ -1,122 +1,156 @@
 import asyncio
 import random
 from datetime import datetime
-from sqlalchemy import select
-from app.database import SessionLocal
-from app.models.user import User, Role, Site, Programme, MATIERES, Filiere, Annee
-from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
+from sqlalchemy import select, delete, update
+from sqlalchemy.orm import selectinload
+from cryptography.fernet import Fernet
+
+from app.database import AsyncSessionLocal
+from app.config import FERNET_KEY
+from app.models.user import User, Role, Site, Programme, Filiere, Annee
 from app.models.mission import Mission
 from app.models.sub_mission import SousMission
+from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
+
+# --- CONFIGURATION CHIFFREMENT ---
+def encrypt_seed(value: str) -> str:
+    if not FERNET_KEY or not value:
+        return value
+    f = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
+    return f.encrypt(value.encode()).decode()
+
+MATIERES = {
+    "PASS": ["UE_1", "UE_2", "UE_3", "UE_4", "UE_5", "UE_6", "UE_7", "UE_8", "MMOK", "PHARMA", "ORAUX"],
+    "LAS 1": ["Physiologie", "Anatomie", "Biologie Cell", "Biochimie", "Biostats", "SSH"],
+    "LAS 2": ["Microbiologie", "Biocell / Immuno", "Biologie Dev", "Génétique", "Physiologie"]
+}
 
 async def seed_data_pro():
-    async with SessionLocal() as db:
-        print("🚀 Démarrage du peuplement de la base Neon...")
+    async with AsyncSessionLocal() as db:
+        print("🚀 Démarrage du peuplement de la base...")
 
-        # 1. RÉCUPÉRATION DES SOUS-MISSIONS (pour créer des lignes valides)
-        result = await db.execute(select(SousMission))
+        # 1. NETTOYAGE
+        user_ids_query = await db.execute(select(User.id).where(User.email.like('%@avicenne.fr')))
+        test_user_ids = user_ids_query.scalars().all()
+        if test_user_ids:
+            decl_ids_query = await db.execute(select(Declaration.id).where(Declaration.user_id.in_(test_user_ids)))
+            test_decl_ids = decl_ids_query.scalars().all()
+            if test_decl_ids:
+                await db.execute(delete(LigneDeclaration).where(LigneDeclaration.declaration_id.in_(test_decl_ids)))
+                await db.execute(delete(Declaration).where(Declaration.id.in_(test_decl_ids)))
+            await db.execute(delete(User).where(User.id.in_(test_user_ids)))
+        await db.commit()
+
+        # 2. CONFIGURATION DES MISSIONS
+        # Marquer les missions de gestion comme réservées aux RESP
+        await db.execute(
+            update(Mission)
+            .where(Mission.titre.ilike("%Gestion%"))
+            .values(resp_only=True)
+        )
+        await db.commit()
+
+        # Chargement Eager (selectinload) pour éviter l'erreur Greenlet
+        result = await db.execute(
+            select(SousMission).options(selectinload(SousMission.mission))
+        )
         all_subs = result.scalars().all()
-        if not all_subs:
-            print("❌ Erreur : Aucune sous-mission en base. Lance d'abord l'initialisation des missions.")
-            return
-
-        # 2. CONFIGURATION DES UTILISATEURS
-        PASSWORD = "hashed_password_ici" # À remplacer par un vrai hash si besoin
-        sites = [Site.lyon_est, Site.lyon_sud]
-        programmes = [Programme.pass_, Programme.las1, Programme.las2]
         
+        subs_classiques = [s for s in all_subs if not s.mission.resp_only]
+        subs_resp_only = [s for s in all_subs if s.mission.resp_only]
+
+        # 3. CRÉATION DES UTILISATEURS
+        PASSWORD = "$2b$12$zQd4INMd4dEgvrJ5D/n01unYIIDK7t3w6IJSe2odXDxOLZOeeeJGe"
+        sites = [Site.lyon_est, Site.lyon_sud]
         all_new_users = []
 
-        print("👥 Création des 30 utilisateurs...")
+        # --- ADMIN ---
+        admin_user = User(
+            email="admin@avicenne.fr", nom="ADMIN", prenom="System",
+            role=Role.admin, site=None, hashed_password=PASSWORD, 
+            is_active=True, profil_complete=True,
+            adresse="1 Rue de l'Administration", code_postal="69008", ville="Lyon"
+        )
+        db.add(admin_user)
+
         for site in sites:
             suffix = "sud" if site == Site.lyon_sud else "est"
             
-            # --- COORDINATEUR (1 par site) ---
+            # COORDINATEUR
             coord = User(
-                email=f"coord.{suffix}@avicenne.fr", nom=f"COORDO", prenom=f"{suffix.upper()}",
-                role=Role.coordo, site=site, hashed_password=PASSWORD, is_active=True, profil_complete=True
+                email=f"coord.{suffix}@avicenne.fr", nom="COORDO", prenom=suffix.upper(),
+                role=Role.coordo, site=site, hashed_password=PASSWORD, 
+                is_active=True, profil_complete=True,
+                adresse=f"Site {suffix.upper()}", code_postal="69000", ville="Lyon"
             )
-            # --- RESPONSABLES (2 par site) ---
-            resps = [
-                User(email=f"resp{i}.{suffix}@avicenne.fr", nom=f"RESP{i}", prenom=f"{suffix.upper()}",
-                     role=Role.resp, site=site, hashed_password=PASSWORD, is_active=True, profil_complete=True)
-                for i in range(1, 3)
-            ]
-            # --- TCP (12 par site) ---
-            tcps = [
-                User(email=f"tcp{i}.{suffix}@avicenne.fr", nom=f"DURAND-{suffix.upper()}{i}", prenom="Jean",
-                     role=Role.tcp, site=site, hashed_password=PASSWORD, is_active=True, profil_complete=True,
-                     programme=random.choice(programmes), filiere=Filiere.medecine, annee=Annee.p2)
-                for i in range(1, 13)
-            ]
-            
-            users_site = [coord] + resps + tcps
-            db.add_all(users_site)
-            all_new_users.extend(users_site)
+            db.add(coord)
 
-        await db.flush() # Pour obtenir les IDs
+            # RESPONSABLES et TCP
+            for role_type, count in [(Role.resp, 2), (Role.tcp, 5)]:
+                for i in range(1, count + 1):
+                    p = random.choice(list(Programme))
+                    m = random.choice(MATIERES.get(p.value, ["Général"]))
+                    
+                    u = User(
+                        email=f"{role_type.value}{i}.{suffix}@avicenne.fr", 
+                        nom=f"{role_type.value.upper()}{i}", prenom=suffix.upper(),
+                        role=role_type, site=site, hashed_password=PASSWORD, 
+                        is_active=True, profil_complete=True, 
+                        programme=p, matiere=m,
+                        adresse=f"{random.randint(1, 150)} Avenue des Testeurs",
+                        code_postal="69008", ville="Lyon",
+                        nss_encrypted=encrypt_seed("185016912345678"),
+                        iban_encrypted=encrypt_seed("FR7630006000011234567890123")
+                    )
+                    db.add(u)
+                    all_new_users.append(u)
 
-        # 3. GÉNÉRATION DES DÉCLARATIONS (150+)
-        print("📊 Génération des déclarations et des lignes...")
+        await db.flush() 
+
+        # 4. GÉNÉRATION DES DÉCLARATIONS (HISTORIQUE 5 MOIS)
+        print("📊 Génération de l'historique (Octobre 2025 -> Février 2026)...")
         
-        # On cible Février (2) et Mars (3) 2026
+        # On définit l'historique par rapport à "aujourd'hui" (Mars 2026 dans ton contexte)
+        historique = [
+            (10, 2025, StatutDeclaration.validee),
+            (11, 2025, StatutDeclaration.validee),
+            (12, 2025, StatutDeclaration.validee),
+            (1, 2026, StatutDeclaration.soumise),
+            (2, 2026, StatutDeclaration.brouillon) # Mois d'Avril ou Février selon tes besoins
+        ]
+
         for user in all_new_users:
-            # --- MARS 2026 (Au moins une par personne) ---
-            # On choisit le programme de l'user ou PASS par défaut
-            prog = user.programme or Programme.pass_
-            
-            decl_mars = Declaration(
-                user_id=user.id,
-                site=user.site,
-                programme=prog,
-                mois=3,
-                annee=2026,
-                statut=random.choice([StatutDeclaration.brouillon, StatutDeclaration.soumise, StatutDeclaration.validee]),
-                soumise_le=datetime.now() if random.random() > 0.5 else None
-            )
-            db.add(decl_mars)
-            await db.flush()
+            if user.role in [Role.admin, Role.coordo]: continue
 
-            # Ajouter 2 à 4 lignes d'activités par déclaration
-            for _ in range(random.randint(2, 4)):
-                sub = random.choice(all_subs)
-                db.add(LigneDeclaration(
-                    declaration_id=decl_mars.id,
-                    sous_mission_id=sub.id,
-                    quantite=random.choice([1.0, 2.0, 5.0, 10.0]) # ex: 2h ou 10 QCM
-                ))
-
-            # --- FÉVRIER 2026 (Validée pour 80% des gens) ---
-            if random.random() > 0.2:
-                decl_feb = Declaration(
-                    user_id=user.id, site=user.site, programme=prog,
-                    mois=2, annee=2026, statut=StatutDeclaration.validee,
-                    soumise_le=datetime(2026, 2, 28)
+            for mois, annee, statut_defaut in historique:
+                decl = Declaration(
+                    user_id=user.id, site=user.site, programme=user.programme,
+                    mois=mois, annee=annee, statut=statut_defaut, 
+                    soumise_le=datetime.now() if statut_defaut != StatutDeclaration.brouillon else None
                 )
-                db.add(decl_feb)
-                await db.flush()
-                
-                # Activités de février
-                for _ in range(3):
-                    sub = random.choice(all_subs)
-                    db.add(LigneDeclaration(
-                        declaration_id=decl_feb.id,
-                        sous_mission_id=sub.id,
-                        quantite=random.uniform(1.0, 5.0)
-                    ))
+                db.add(decl)
+                await db.flush() 
 
-        # 4. CAS PARTICULIERS : AJOUT DE REJETS
-        print("⚠️ Ajout de quelques rejets pour test...")
-        for _ in range(15):
-            target_user = random.choice(all_new_users)
-            decl_rejet = Declaration(
-                user_id=target_user.id, site=target_user.site, programme=target_user.programme or Programme.pass_,
-                mois=3, annee=2026, statut=StatutDeclaration.brouillon, # Un rejet redevient brouillon
-                commentaire_admin="Motif : Justificatif de séance non joint ou heures incohérentes."
-            )
-            db.add(decl_rejet)
+                # A. Forfait RESP uniquement
+                if user.role == Role.resp and subs_resp_only:
+                    for s_resp in subs_resp_only:
+                        db.add(LigneDeclaration(
+                            declaration_id=decl.id, 
+                            sous_mission_id=s_resp.id,
+                            quantite=1.0
+                        ))
+
+                # B. Heures classiques
+                for _ in range(random.randint(1, 3)):
+                    if subs_classiques:
+                        db.add(LigneDeclaration(
+                            declaration_id=decl.id, 
+                            sous_mission_id=random.choice(subs_classiques).id,
+                            quantite=float(random.randint(2, 10))
+                        ))
 
         await db.commit()
-        print(f"✅ Terminé ! 30 utilisateurs et environ {150} déclarations injectés sur Neon.")
+        print(f"✅ Terminé ! Profils injectés et historique créé.")
 
 if __name__ == "__main__":
     asyncio.run(seed_data_pro())

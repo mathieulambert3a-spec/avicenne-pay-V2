@@ -3,53 +3,231 @@
 {% block content %}
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0 text-gray-800">Tableau de Bord Statistiques</h1>
-        <button onclick="window.print()" class="btn btn-sm btn-outline-primary">
-            <i class="fas fa-download fa-sm"></i> Imprimer le rapport
+        <h1 class="h3 mb-0 text-gray-800">Dépenses</h1>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-primary shadow-sm">
+            <i class="fas fa-print fa-sm"></i> Imprimer
         </button>
     </div>
 
-    <div class="row">
-        <div class="col-xl-4 col-lg-5">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Répartition par Site (€)</h6>
-                </div>
+    <div class="row mb-4">  
+        <div class="col-md-4">
+            <div class="card bg-primary text-white shadow">
                 <div class="card-body">
-                    <div class="chart-pie pt-4 pb-2">
-                        <canvas id="siteChart"></canvas>
+                    <div class="text-center mb-3">
+                        <h6 class="text-uppercase small mb-1" style="opacity: 0.8;">Dépense Totale AVICENNE</h6>
+                        <h2 class="mb-0 fw-bold">{{ "{:,.2f}".format(total_avicenne).replace(',', ' ') }} €</h2>
+                    </div>
+                    
+                    <hr style="border-top: 1px solid rgba(255,255,255,0.2);">
+                    
+                    <div class="d-flex justify-content-between align-items-center px-2">
+                        <span class="small">Lyon Est</span>
+                        <span class="fw-bold">{{ "{:,.2f}".format(total_lyon_est).replace(',', ' ') }} €</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center px-2 mt-1">
+                        <span class="small">Lyon Sud</span>
+                        <span class="fw-bold">{{ "{:,.2f}".format(total_lyon_sud).replace(',', ' ') }} €</span>
                     </div>
                 </div>
             </div>
         </div>
+        <div class="col-md-8">
+            <div class="card shadow border-0" style="background: linear-gradient(45deg, #1cc88a, #13855c); color: white;">
+                <div class="card-body">
+                    <h6 class="text-uppercase small mb-3 fw-bold" style="opacity: 0.8;">Volume de travail par unité</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if stats_unites %}
+                            {# 1. On définit la liste des correspondances #}
+                            {% set mapping = {
+                                'heure': 'HEURE',
+                                'jour': 'JOUR (FORFAIT)',
+                                'map / support': 'CREATION SUPPORTS',
+                                'mois': 'MOIS (FORFAIT)',
+                                'pré-colle': 'REUNION PRE-COLLE (FORFAIT)',
+                                'qcm': 'CREATION QCM',
+                                'support': 'RELECTURE SUPPORT (FORFAIT)'
+                            } %}
 
-        <div class="col-xl-8 col-lg-7">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Top 10 des Intervenants (Montant Brut)</h6>
+                            {% for unite, quantite in stats_unites.items()|sort %}
+                                {# 1. On nettoie le nom (on enlève 'par ' et on met en minuscule) #}
+                                {% set unite_clean = unite.lower().replace('par ', '').strip() %}
+                                
+                                <div class="bg-white rounded-3 px-3 py-2 text-center shadow-sm" style="min-width: 140px;">
+                                    <div class="text-dark small fw-bold text-uppercase" style="font-size: 0.6rem; line-height: 1.1;">
+                                        {# 2. On cherche dans le mapping avec le nom nettoyé #}
+                                        {{ mapping.get(unite_clean, unite.upper()) }}
+                                    </div>
+                                    <div class="text-success h4 mb-0 fw-bold">
+                                        {% if 'heure' in unite.lower() %}
+                                            {{ "{:,.1f}".format(quantite).replace(',', ' ') }}
+                                        {% else %}
+                                            {{ quantite | int }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                        {% endfor %}
+                        {% else %}
+                            <div class="h5 mb-0 opacity-75">Aucune donnée</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow mb-4 border-0">
+        <div class="card-body bg-light">
+            <form method="GET" action="/admin/stats" class="row g-2 align-items-end shadow-sm p-3 mb-4 bg-light rounded border">  
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-primary">Depuis</label>
+                    <div class="input-group input-group-sm">
+                        <select name="start_mois" class="form-select">
+                            {% for m in range(1, 13) %}
+                            <option value="{{ m }}" {% if m == current_start_mois %}selected{% endif %}>
+                                {{ ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"][m-1] }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="start_annee" class="form-control px-1 text-center" value="{{ current_start_annee }}" style="max-width: 70px;">
+                    </div>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-primary">Jusqu'à</label>
+                    <div class="input-group input-group-sm">
+                        <select name="end_mois" class="form-select">
+                            {% for m in range(1, 13) %}
+                            <option value="{{ m }}" {% if m == current_end_mois %}selected{% endif %}>
+                                {{ ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"][m-1] }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="end_annee" class="form-control px-1 text-center" value="{{ current_end_annee }}" style="max-width: 70px;">
+                    </div>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-primary">Statut</label>
+                    <select name="statut" class="form-select form-select-sm">
+                        <option value="" {% if not current_statut %}selected{% endif %}>Soumise & Validée</option>
+                        <option value="soumise" {% if current_statut == 'soumise' %}selected{% endif %}>Soumise uniquement</option>
+                        <option value="validee" {% if current_statut == 'validee' %}selected{% endif %}>Validée uniquement</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-primary">Programme</label>
+                    <select name="programme" id="filter-programme" class="form-select form-select-sm">
+                        <option value="">Tous</option>
+                        {% for p_name in programmes_matieres.keys() %}
+                        <option value="{{ p_name }}" {% if current_programme == p_name %}selected{% endif %}>{{ p_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-primary">Matière</label>
+                    <select name="matiere" id="filter-matiere" class="form-select form-select-sm">
+                        <option value="">Toutes</option>
+                        {% if current_programme and current_programme in programmes_matieres %}
+                            {% for m in programmes_matieres[current_programme] %}
+                            <option value="{{ m }}" {% if current_matiere == m %}selected{% endif %}>{{ m }}</option>
+                            {% endfor %}
+                        {% else %}
+                            {% for m in toutes_les_matieres %}
+                            <option value="{{ m }}" {% if current_matiere == m %}selected{% endif %}>{{ m }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div class="col-md-2 d-grid gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold">
+                        <i class="fas fa-filter me-1"></i> Filtrer
+                    </button>
+                    <a id="export-csv-btn" href="#" class="btn btn-outline-success btn-sm fw-bold">
+                        <i class="fas fa-file-export me-1"></i> Export CSV
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow border-0">
+                <div class="card-header py-3 bg-white">
+                    <h6 class="m-0 font-weight-bold text-primary">Évolution des versements (€)</h6>
+                </div>
+                <div class="card-body">
+                    <div style="height: 350px;"><canvas id="evolutionChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-xl-4">
+            <div class="card shadow mb-4 border-0">
+                <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">Campus</h6></div>
+                <div class="card-body">
+                    <div style="height: 250px;"><canvas id="siteChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-8">
+            <div class="card shadow mb-4 border-0">
+                <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Top 10 des contributeurs</h6>
+                    <span class="badge bg-light text-muted border px-2 py-1" style="font-size: 0.7rem;">Classé par montant total</span>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Intervenant</th>
-                                    <th>Site</th>
-                                    <th class="text-center">Heures</th>
-                                    <th class="text-end">Montant Brut</th>
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr class="text-uppercase small fw-bold text-muted">
+                                    <th class="ps-3">Collaborateur</th>
+                                    <th class="text-center">Rôle</th>
+                                    <th class="text-center">Campus</th>
+                                    <th class="text-end pe-3">Total versé</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for row in stats_users %}
                                 {% set u = row[0] %}
                                 <tr>
-                                    <td>
-                                        <div class="fw-bold">{{ u.email.split('@')[0]|capitalize }}</div>
-                                        <small class="text-muted">{{ u.role.value }}</small>
+                                    {# 1. COLLABORATEUR #}
+                                    <td class="ps-3">
+                                        <div class="fw-bold text-dark">{{ u.prenom }} {{ u.nom }}</div>
+                                        <div class="text-muted small" style="font-size: 0.7rem;">{{ u.email }}</div>
                                     </td>
-                                    <td>{{ u.site.value if u.site else '-' }}</td>
-                                    <td class="text-center">{{ "%.2f"|format(row[2]) }}h</td>
-                                    <td class="text-end fw-bold text-success">{{ "%.2f"|format(row[1]) }} €</td>
+
+                                    {# 2. RÔLE (AVEC COULEURS) #}
+                                    <td class="text-center">
+                                        {% if u.role.value == 'admin' %}
+                                            <span class="badge rounded-pill bg-danger px-2" style="font-size: 0.65rem;">ADMIN</span>
+                                        {% elif u.role.value == 'coordo' %}
+                                            <span class="badge rounded-pill bg-info text-dark px-2" style="font-size: 0.65rem;">COORDO</span>
+                                        {% elif u.role.value == 'resp' %}
+                                            <span class="badge rounded-pill bg-primary px-2" style="font-size: 0.65rem;">RESP</span>
+                                        {% elif u.role.value == 'tcp' %}
+                                            <span class="badge rounded-pill bg-success px-2" style="font-size: 0.65rem;">TCP</span>
+                                        {% else %}
+                                            <span class="badge rounded-pill bg-light text-dark border px-2" style="font-size: 0.65rem;">{{ u.role.value | upper if u.role else '-' }}</span>
+                                        {% endif %}
+                                    </td>
+
+                                    {# 3. CAMPUS #}
+                                    <td class="text-center">
+                                        <span class="badge {% if u.site and u.site.value == 'Lyon Est' %}bg-primary-subtle text-primary{% else %}bg-success-subtle text-success{% endif %} border-0 px-2" style="font-size: 0.75rem;">
+                                            {{ u.site.value if u.site else '-' }}
+                                        </span>
+                                    </td>
+
+                                    {# 4. TOTAL #}
+                                    <td class="text-end pe-3">
+                                        <span class="fw-bold text-primary">{{ "{:,.2f}".format(row[1]).replace(',', ' ') }} €</span>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -58,35 +236,180 @@
                 </div>
             </div>
         </div>
-    </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<div id="stats-data" 
+     data-lyon-est='{{ data_lyon_est | tojson | safe }}' 
+     data-lyon-sud='{{ data_lyon_sud | tojson | safe }}' 
+     data-start-mois="{{ current_start_mois }}"
+     data-start-annee="{{ current_start_annee }}"
+     data-end-mois="{{ current_end_mois }}"
+     data-end-annee="{{ current_end_annee }}"
+     data-sites-json='[{% for s in stats_sites %}{"label": "{{ s[0].value if s[0] and s[0].value is defined else (s[0] or "Inconnu") }}", "value": {{ s[1] or 0 }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+     style="display: none;">
+</div>
 
-<script>
-    // Préparation des données depuis le backend
-    const siteLabels = [{% for s in stats_sites %}"{{ s[0].value if s[0] else 'Inconnu' }}",{% endfor %}];
-    const siteData = [{% for s in stats_sites %}{{ s[1] }},{% endfor %}];
+<div id="data-bridge" 
+     data-programmes='{{ programmes_matieres | tojson | safe if programmes_matieres else "{}" }}' 
+     data-current-matiere="{{ current_matiere or '' }}" 
+     style="display: none;">
+</div>
 
-    const ctx = document.getElementById('siteChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: siteLabels,
-            datasets: [{
-                data: siteData,
-                backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b'],
-                hoverBackgroundColor: ['#2e59d9', '#17a673', '#2c9faf', '#dda20a', '#be2617'],
-                hoverBorderColor: "rgba(234, 236, 244, 1)",
-            }],
-        },
-        options: {
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom' }
-            },
-            cutout: '70%',
-        },
-    });
-</script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    (function() {
+        const dataContainer = document.getElementById('stats-data');
+        if (!dataContainer) return;
+
+        try {
+            // 1. Récupération sécurisée des données
+            const rawEst = JSON.parse(dataContainer.getAttribute('data-lyon-est') || '[]');
+            const rawSud = JSON.parse(dataContainer.getAttribute('data-lyon-sud') || '[]');
+            const sitesRaw = JSON.parse(dataContainer.getAttribute('data-sites-json') || '[]');
+            
+            const sMois = parseInt(dataContainer.getAttribute('data-start-mois')) || 1;
+            const sAnnee = parseInt(dataContainer.getAttribute('data-start-annee')) || 2025;
+            const eMois = parseInt(dataContainer.getAttribute('data-end-mois')) || 12;
+            const eAnnee = parseInt(dataContainer.getAttribute('data-end-annee')) || 2025;
+
+            // 2. Génération des labels
+            const monthNames = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+            const dynamicLabels = [];
+            let currM = sMois;
+            let currA = sAnnee;
+
+            while ((currA * 100 + currM) <= (eAnnee * 100 + eMois)) {
+                dynamicLabels.push(monthNames[currM - 1] + " " + String(currA).slice(-2));
+                currM++;
+                if (currM > 12) { currM = 1; currA++; }
+                if (dynamicLabels.length > 120) break; // Sécurité boucle infinie
+            }
+
+            // 3. Graphique d'Évolution
+            const evoCtx = document.getElementById('evolutionChart');
+            if (evoCtx) {
+                // Destruction propre si déjà existant
+                const existingChart = Chart.getChart(evoCtx);
+                if (existingChart) existingChart.destroy();
+
+                new Chart(evoCtx, {
+                    type: 'line',
+                    data: {
+                        labels: dynamicLabels,
+                        datasets: [
+                            { 
+                                label: "Lyon Est", 
+                                data: dynamicLabels.map((_, i) => rawEst[i] || 0), 
+                                borderColor: '#4e73df', 
+                                backgroundColor: 'rgba(78, 115, 223, 0.1)', 
+                                fill: true, 
+                                tension: 0.3 
+                            },
+                            { 
+                                label: "Lyon Sud", 
+                                data: dynamicLabels.map((_, i) => rawSud[i] || 0), 
+                                borderColor: '#1cc88a', 
+                                backgroundColor: 'rgba(28, 200, 138, 0.1)', 
+                                fill: true, 
+                                tension: 0.3 
+                            }
+                        ]
+                    },
+                    options: { 
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, ticks: { callback: v => v + ' €' } } }
+                    }
+                });
+            }
+
+            // 4. Graphique par Site (Doughnut)
+            const siteCtx = document.getElementById('siteChart');
+            if (siteCtx) {
+                const existingSiteChart = Chart.getChart(siteCtx);
+                if (existingSiteChart) existingSiteChart.destroy();
+
+                new Chart(siteCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: sitesRaw.map(s => s.label),
+                        datasets: [{ 
+                            data: sitesRaw.map(s => s.value), 
+                            backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e'] 
+                        }]
+                    },
+                    options: { maintainAspectRatio: false }
+                });
+            }
+        } catch (err) {
+            console.error("Erreur d'initialisation des graphiques:", err);
+        }
+    })();
+
+    // LOGIQUE FILTRES
+    // LOGIQUE FILTRES ET EXPORT
+document.addEventListener('DOMContentLoaded', function() {
+    const filterForm = document.querySelector('form[action="/admin/stats"]');
+    const exportBtn = document.getElementById('export-csv-btn');
+    
+    // Correction des IDs pour correspondre au HTML (id="filter-programme" etc.)
+    const progSelect = document.getElementById('filter-programme');
+    const matSelect = document.getElementById('filter-matiere');
+    const bridge = document.getElementById('data-bridge');
+
+    function updateExportUrl() {
+    const filterForm = document.querySelector('form[action="/admin/stats"]');
+    const exportBtn = document.getElementById('export-csv-btn');
+    if (!exportBtn || !filterForm) return;
+
+    const formData = new FormData(filterForm);
+    const params = new URLSearchParams();
+
+    // On envoie TOUS les filtres pour que l'export soit identique au visuel
+    params.append('start_mois', formData.get('start_mois'));
+    params.append('start_annee', formData.get('start_annee'));
+    params.append('end_mois', formData.get('end_mois'));
+    params.append('end_annee', formData.get('end_annee'));
+    
+    if (formData.get('statut')) params.append('statut', formData.get('statut'));
+    if (formData.get('programme')) params.append('programme', formData.get('programme'));
+    if (formData.get('matiere')) params.append('matiere', formData.get('matiere'));
+
+    exportBtn.href = "/admin/stats/export-csv?" + params.toString();
+    }
+
+    if (bridge && progSelect && matSelect) {
+        const dataProg = JSON.parse(bridge.getAttribute('data-programmes') || '{}');
+        const currentMatiere = bridge.getAttribute('data-current-matiere');
+
+        function updateMatieres() {
+            const selectedProg = progSelect.value;
+            matSelect.innerHTML = '<option value="">Toutes les matières</option>';
+            
+            // On récupère la liste selon le programme ou toute la liste
+            let list = (selectedProg && dataProg[selectedProg]) ? dataProg[selectedProg] : Object.values(dataProg).flat();
+            
+            // Nettoyage des doublons et création des options
+            [...new Set(list)].sort().forEach(mat => {
+                const opt = document.createElement('option');
+                opt.value = mat;
+                opt.textContent = mat.replace(/_/g, ' ');
+                if (mat === currentMatiere) opt.selected = true;
+                matSelect.appendChild(opt);
+            });
+            
+            // Une fois les matières mises à jour, on rafraîchit l'URL d'export
+            updateExportUrl();
+        }
+
+        progSelect.addEventListener('change', updateMatieres);
+        // Initialisation au chargement
+        updateMatieres();
+    }
+
+    // Si on change n'importe quel autre filtre (dates, statut), on met à jour l'URL d'export
+    if (filterForm) {
+        filterForm.addEventListener('change', updateExportUrl);
+    }
+});
+    </script>
 {% endblock %}

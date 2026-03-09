@@ -2,6 +2,7 @@
 :root {
     --primary-color: #0d6efd;
     --bg-light: #f8f9fa;
+    --danger-color: #dc3545; /* Ajouté pour l'animation */
 }
 
 body {
@@ -21,7 +22,7 @@ body {
 /* Cartes (Cards) */
 .card {
     border: none;
-    border-radius: 0.75rem; /* Un peu plus arrondi pour un look moderne */
+    border-radius: 0.75rem; 
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -52,29 +53,82 @@ footer {
     border-top: 1px solid #e9ecef;
 }
 
-/* Print : Masquer la navbar à l'impression */
+/* Animations de validation de profil */
+@keyframes pulse-red {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+    }
+    70% {
+        transform: scale(1.03);
+        box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+    }
+}
+
+.animate-pulse {
+    animation: pulse-red 2s infinite;
+    border: 2px solid white !important;
+}
+
 @media print {
-    .navbar, .btn, footer {
+    /* 1. Masquer les éléments interactifs et inutiles */
+    .navbar, .btn, footer, form, #export-csv-btn, .input-group {
         display: none !important;
     }
+
+    /* 2. Forcer l'impression des couleurs de fond (Bootstrap les retire par défaut) */
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* 3. Ajuster les cartes pour économiser l'encre et améliorer la lisibilité */
     .card {
         border: 1px solid #dee2e6 !important;
         box-shadow: none !important;
+        break-inside: avoid; /* Évite de couper une carte en deux entre deux pages */
+        margin-bottom: 1rem !important;
+    }
+
+    /* 4. Forcer les fonds colorés des badges et des cartes de stats */
+    .bg-primary, .bg-success, .badge {
+        background-color: #0d6efd !important; /* Bleu Bootstrap */
+        color: white !important;
+    }
+    
+    .text-white {
+        color: black !important; /* Optionnel : passer le texte en noir pour économiser l'encre */
+    }
+
+    /* 5. Ajuster la taille des graphiques pour qu'ils tiennent sur la largeur */
+    canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* 6. Supprimer les marges inutiles du container */
+    .container-fluid {
+        padding: 0 !important;
+        width: 100% !important;
     }
 }
+
 /* Interactions et Liens */
 .hover-primary {
     transition: all 0.2s ease;
-    color: inherit; /* Garde la couleur du texte par défaut (souvent noir/gris) */
+    color: inherit;
 }
 
 .hover-primary:hover {
-    color: var(--primary-color) !important; /* Utilise ta variable bleu définie en haut */
+    color: var(--primary-color) !important;
     text-decoration: underline !important;
     cursor: pointer;
 }
 
-/* Optionnel : ajoute un petit effet de "clic" */
 .hover-primary:active {
     opacity: 0.7;
 }

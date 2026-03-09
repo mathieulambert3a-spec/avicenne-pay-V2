@@ -79,6 +79,32 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # --- LOGIQUE DE VÉRIFICATION ---
+    @property
+    def is_payment_profile_complete(self) -> bool:
+        """
+        Vérifie si les informations critiques pour le paiement sont présentes.
+        """
+        champs_obligatoires = [
+            self.nom,
+            self.prenom,
+            self.adresse,
+            self.ville,
+            self.nss_encrypted,
+            self.iban_encrypted
+        ]
+        # Retourne True si TOUS les champs sont remplis (non None et non vides)
+        return all(val and str(val).strip() for val in champs_obligatoires)
+
+    def can_submit_declaration(self) -> bool:
+        """
+        Les admins et coordos peuvent toujours soumettre.
+        Les RESP et TCP doivent avoir un profil complet.
+        """
+        if self.role in [Role.admin, Role.coordo]:
+            return True
+        return self.is_payment_profile_complete
+
     # RELATIONS
     declarations: Mapped[list["Declaration"]] = relationship("Declaration", back_populates="user")
 

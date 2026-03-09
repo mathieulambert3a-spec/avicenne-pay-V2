@@ -1,189 +1,219 @@
-{% extends "base.html" %}
+    {% extends "base.html" %}
 
-{% block title %}Configuration du Référentiel Missions{% endblock %}
+    {% block title %}Configuration du Référentiel Missions{% endblock %}
 
-{% block content %}
-<div class="container py-4">
+    {% block content %}
+    <div class="container py-4">
 
-    {# --- EN-TÊTE --- #}
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0 text-primary">
-                <i class="bi bi-gear-fill me-2"></i>Référentiel des Missions
-            </h1>
-            <p class="text-muted small mb-0">
-                Configurez les missions et tarifs que les intervenants pourront déclarer.
-            </p>
+        {# --- EN-TÊTE --- #}
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="h3 mb-0 text-primary">
+                    <i class="bi bi-gear-fill me-2"></i>Référentiel des Missions
+                </h1>
+                <p class="text-muted small mb-0">
+                    Configurez les missions et tarifs que les intervenants pourront déclarer.
+                </p>
+            </div>
+            <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAddMission">
+                <i class="bi bi-plus-lg me-2"></i>Nouvelle Mission Parent
+            </button>
         </div>
-        <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAddMission">
-            <i class="bi bi-plus-lg me-2"></i>Nouvelle Mission Parent
-        </button>
-    </div>
 
-{# --- LISTE DES MISSIONS EN ACCORDÉON --- #}
+    {# --- LISTE DES MISSIONS EN ACCORDÉON --- #}
+        <div class="accordion shadow-sm" id="accordionMissionsAdmin">
+            {% for mission in missions %}
+            <div class="accordion-item border-0 mb-2 shadow-sm rounded overflow-hidden">
+                
+                <h2 class="accordion-header position-relative" id="heading{{ mission.id }}">
+                <div class="d-flex align-items-center bg-light rounded shadow-sm">
+                    {# Le bouton de l'accordéon #}
+                    <button class="accordion-button collapsed fw-bold flex-grow-1"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#collapse{{ mission.id }}"
+                            aria-expanded="false"
+                            aria-controls="collapse{{ mission.id }}">
+                        <i class="bi bi-folder2-open me-2 text-primary"></i>
+                        <span class="{% if not mission.is_active %}text-muted text-decoration-line-through{% endif %}">
+                            {{ mission.titre }}
+                        </span>
+                        {% if not mission.is_active %}
+                            <span class="badge bg-warning text-dark ms-2 small">Masqué</span>
+                        {% endif %}
+                    </button>
 
-
-    <div class="accordion shadow-sm" id="accordionMissionsAdmin">
-        {% for mission in missions %}
-        <div class="accordion-item border-0 mb-2 shadow-sm rounded overflow-hidden">
-            
-            <h2 class="accordion-header" id="heading{{ mission.id }}">
-                <button class="accordion-button collapsed bg-light fw-bold"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#collapse{{ mission.id }}"
-                        aria-expanded="false"
-                        aria-controls="collapse{{ mission.id }}">
-                    <i class="bi bi-folder2-open me-2 text-primary"></i>
-                    {{ mission.titre }}
-                    <span class="badge bg-secondary ms-2">{{ mission.sous_missions|length }} sous-missions</span>
-                </button>
+                    {# --- LE BOUTON TOGGLE --- #}
+                    {# On le place en position absolue ou avec un z-index élevé pour qu'il soit cliquable #}
+                    <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/toggle-active" 
+                        class="ms-auto pe-3 mb-0" style="z-index: 5;">
+                        <button class="btn btn-sm {% if mission.is_active %}btn-outline-success{% else %}btn-outline-secondary{% endif %} shadow-sm" 
+                                type="submit" 
+                                title="Afficher/Masquer">
+                            <i class="bi {% if mission.is_active %}bi-eye-fill{% else %}bi-eye-slash{% endif %}"></i>
+                        </button>
+                    </form>
+                </div>
             </h2>
 
-            <div id="collapse{{ mission.id }}" 
-                 class="accordion-collapse collapse" 
-                 aria-labelledby="heading{{ mission.id }}" 
-                 data-bs-parent="#accordionMissionsAdmin">
-                
-                <div class="accordion-body bg-white border-top">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="text-uppercase small fw-bold text-muted mb-0">Sous-missions & Tarifs</h6>
+                <div id="collapse{{ mission.id }}" 
+                    class="accordion-collapse collapse" 
+                    aria-labelledby="heading{{ mission.id }}" 
+                    data-bs-parent="#accordionMissionsAdmin">
+                    
+                    <div class="accordion-body bg-white border-top">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="text-uppercase small fw-bold text-muted mb-0">Sous-missions & Tarifs</h6>
 
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-primary btn-sm"
-                                    onclick="openAddSubMission('{{ mission.id }}', '{{ mission.titre|e }}')">
-                                <i class="bi bi-plus"></i> Ajouter une ligne
-                            </button>
-
-                            {# Formulaire suppression Mission Parent #}
-                            <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/delete">
-                                <button class="btn btn-outline-danger btn-sm" type="button" onclick="confirmDelete(this)">
-                                    <i class="bi bi-trash"></i> Supprimer mission
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm"
+                                        onclick="openAddSubMission('{{ mission.id }}', '{{ mission.titre|e }}')">
+                                    <i class="bi bi-plus"></i> Ajouter une ligne
                                 </button>
-                            </form>
+
+                                {# Formulaire suppression Mission Parent #}
+                                <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/delete">
+                                    <button class="btn btn-outline-danger btn-sm" type="button" onclick="confirmDelete(this)">
+                                        <i class="bi bi-trash"></i> Supprimer mission
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr class="small">
+                                        <th>Libellé de la sous-mission</th>
+                                        <th class="text-center">Tarif</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for sm in mission.sous_missions %}
+                                    <tr class="{% if not sm.is_active %}table-secondary{% endif %}">
+                                        <td class="fw-semibold">
+                                            <span class="{% if not sm.is_active %}text-muted text-decoration-line-through{% endif %}">
+                                                {{ sm.titre }}
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge bg-success-subtle text-success px-3 py-2">
+                                                {{ sm.tarif }} €{% if sm.unite %} / {{ sm.unite }}{% endif %}
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="d-inline-flex gap-1">
+                                                <a class="btn btn-outline-secondary btn-sm" href="/admin/referentiel/missions/{{ mission.id }}/sous-missions/{{ sm.id }}/edit">
+                                                    <i class="bi bi-pencil"></i>
+                                                </a>
+                                                {# Formulaire suppression Sous-Mission #}
+                                                <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/sous-missions/{{ sm.id }}/delete" style="display:inline;">
+                                                    <button class="btn btn-outline-danger btn-sm" type="button" onclick="confirmDelete(this)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3 small italic">Aucune sous-mission.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div> {# Fin accordion-body #}
+                </div> {# Fin accordion-collapse #}
+            </div> {# Fin accordion-item #}
+            {% endfor %}
+        </div>
+
+    {# --- MODALES (Inchangées mais placées hors des boucles) --- #}
+    <div class="modal fade" id="modalAddMission" tabindex="-1">
+        <div class="modal-dialog">
+            <form action="/admin/referentiel/mission/add" method="post" class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Créer une Mission Parent</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nom de la Mission</label>
+                        <input type="text" name="nom" class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">Créer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalAddSubMission" tabindex="-1">
+        <div class="modal-dialog">
+            <form action="/admin/referentiel/sub-mission/add" method="post" class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">Ajouter à <span id="parentNameDisplay" class="text-info"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="parent_id" id="parentIdInput">
+                    <div class="mb-3">
+                        <label class="form-label">Nom de la sous-mission</label>
+                        <input type="text" name="nom" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Tarif (€)</label>
+                            <input type="number" name="tarif" step="0.5" class="form-control" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Unité</label>
+                            <select name="unite" class="form-select" required>
+                                {% for u in unites_disponibles %}
+                                <option value="{{ u }}">{{ u }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
-
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover align-middle">
-                            <thead class="table-light">
-                                <tr class="small">
-                                    <th>Libellé de la sous-mission</th>
-                                    <th class="text-center">Tarif</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sm in mission.sous_missions %}
-                                <tr class="{% if not sm.is_active %}table-secondary{% endif %}">
-                                    <td class="fw-semibold">
-                                        <span class="{% if not sm.is_active %}text-muted text-decoration-line-through{% endif %}">
-                                            {{ sm.titre }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-success-subtle text-success px-3 py-2">
-                                            {{ sm.tarif }} €{% if sm.unite %} / {{ sm.unite }}{% endif %}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <div class="d-inline-flex gap-1">
-                                            <a class="btn btn-outline-secondary btn-sm" href="/missions/{{ mission.id }}/sous-missions/{{ sm.id }}/edit">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            {# Formulaire suppression Sous-Mission #}
-                                            <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/sous-missions/{{ sm.id }}/delete" style="display:inline;">
-                                                <button class="btn btn-outline-danger btn-sm" type="button" onclick="confirmDelete(this)">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% else %}
-                                <tr>
-                                    <td colspan="3" class="text-center text-muted py-3 small italic">Aucune sous-mission.</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div> {# Fin accordion-body #}
-            </div> {# Fin accordion-collapse #}
-        </div> {# Fin accordion-item #}
-        {% endfor %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">Enregistrer</button>
+                </div>
+            </form>
+        </div>
     </div>
 
-{# --- MODALES (Inchangées mais placées hors des boucles) --- #}
-<div class="modal fade" id="modalAddMission" tabindex="-1">
-    <div class="modal-dialog">
-        <form action="/admin/referentiel/mission/add" method="post" class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">Créer une Mission Parent</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Nom de la Mission</label>
-                    <input type="text" name="nom" class="form-control" required>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
-                <button type="submit" class="btn btn-primary">Créer</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="modal fade" id="modalAddSubMission" tabindex="-1">
-    <div class="modal-dialog">
-        <form action="/admin/referentiel/sub-mission/add" method="post" class="modal-content">
-            <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title">Ajouter à <span id="parentNameDisplay" class="text-info"></span></h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" name="parent_id" id="parentIdInput">
-                <div class="mb-3">
-                    <label class="form-label">Nom de la sous-mission</label>
-                    <input type="text" name="nom" class="form-control" required>
-                </div>
-                <div class="row">
-                    <div class="col-6 mb-3">
-                        <label class="form-label">Tarif (€)</label>
-                        <input type="number" name="tarif" step="0.5" class="form-control" required>
-                    </div>
-                    <div class="col-6 mb-3">
-                        <label class="form-label">Unité</label>
-                        <select name="unite" class="form-select" required>
-                            {% for u in unites_disponibles %}
-                            <option value="{{ u }}">{{ u }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
-                <button type="submit" class="btn btn-success">Enregistrer</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script>
-function openAddSubMission(parentId, parentName) {
-    document.getElementById('parentIdInput').value = parentId;
-    document.getElementById('parentNameDisplay').innerText = parentName;
-    new bootstrap.Modal(document.getElementById('modalAddSubMission')).show();
-}
-</script>
-
-<style>
-    .accordion-button:not(.collapsed) {
-        background-color: #f8f9fa;
-        color: #0d6efd;
+    <script>
+    function openAddSubMission(parentId, parentName) {
+        document.getElementById('parentIdInput').value = parentId;
+        document.getElementById('parentNameDisplay').innerText = parentName;
+        new bootstrap.Modal(document.getElementById('modalAddSubMission')).show();
     }
-</style>
-{% endblock %}
+    // AJOUTE CETTE FONCTION SI ELLE N'Y EST PAS
+    function confirmDelete(buttonElement) {
+        const form = buttonElement.closest('form');
+        Swal.fire({
+            title: 'Supprimer ?',
+            text: "Cette action est définitive.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'Supprimer',
+            cancelButtonText: 'Annuler'
+        }).then((result) => {
+            if (result.isConfirmed) form.submit();
+        });
+    }
+    </script>
+    <style>
+        .accordion-button:not(.collapsed) {
+            background-color: #f8f9fa;
+            color: #0d6efd;
+        }
+    </style>
+    {% endblock %}

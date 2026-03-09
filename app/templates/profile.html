@@ -30,6 +30,35 @@
 </div>
 {% endif %}
 
+{# --- BLOC D'AVERTISSEMENT PROFIL INCOMPLET --- #}
+{% if user.role.value in ['resp', 'tcp'] and not user.profil_complete %}
+    <div class="alert alert-danger border-0 shadow-sm mb-4">
+        <div class="d-flex">
+            <i class="bi bi-shield-exclamation fs-3 me-3"></i>
+            <div>
+                <h5 class="alert-heading fw-bold">Action requise : Paiement bloqué</h5>
+                <p class="mb-2">Votre profil n'est pas encore conforme. Pour pouvoir saisir vos vacations, les informations suivantes sont obligatoires :</p>
+                <div class="row small">
+                    <div class="col-md-6">
+                        <ul class="mb-0">
+                            <li class="{% if user.nom and user.prenom %}text-decoration-line-through text-success{% endif %}">Nom et Prénom</li>
+                            <li class="{% if user.adresse and user.ville %}text-decoration-line-through text-success{% endif %}">Adresse postale complète</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul class="mb-0">
+                            <li class="{% if nss %}text-decoration-line-through text-success{% endif %}">Numéro de Sécurité Sociale (NSS)</li>
+                            <li class="{% if iban %}text-decoration-line-through text-success{% endif %}">RIB (IBAN)</li>
+                        </ul>
+                    </div>
+                </div>
+                <hr>
+                <p class="mb-0 small italic"><i class="bi bi-info-circle me-1"></i> Une fois remplis, cliquez sur <strong>"Valider et finaliser mon profil"</strong> en bas de page.</p>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
 <form method="post" action="/profile" autocomplete="off">
     <div class="row">
         
@@ -115,7 +144,7 @@
                 <i class="bi bi-mortarboard-fill me-2"></i> Affectation Académique
             </div>
             <div class="card-body">
-                {# Le SITE est conservé pour tout le monde (y compris coordo) #}
+                {# SITE : Pour tout le monde #}
                 <div class="mb-3">
                     <label class="form-label small fw-bold text-secondary">Site principal</label>
                     <select name="site" class="form-select border-success-subtle">
@@ -126,57 +155,81 @@
                     </select>
                 </div>
 
-                {# PROGRAMME ET MATIÈRE : Masqués pour les Coordonnateurs #}
                 {% if user.role.value in ['resp', 'tcp'] %}
-                <div class="mb-3">
-                    <label class="form-label small fw-bold text-secondary">Programme d'enseignement</label>
-                    <select name="programme" id="programmeSelect" class="form-select" onchange="updateMatieres()">
-                        <option value="">-- Sélectionner --</option>
-                        {% for p in programmes %}
-                        <option value="{{ p.value }}" {% if user.programme and user.programme.value == p.value %}selected{% endif %}>{{ p.value }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="mb-1">
-                    <label class="form-label small fw-bold text-secondary">Matière / Spécialité</label>
-                    <select name="matiere" id="matiereSelect" class="form-select">
-                        <option value="">-- Choisir d'abord un programme --</option>
-                    </select>
-                </div>
+                    {# FILIÈRE ET ANNÉE : Uniquement pour les étudiants #}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-secondary">Ma filière</label>
+                            <select name="filiere" class="form-select">
+                                <option value="">-- Sélectionner --</option>
+                                {% for f in filieres %}
+                                <option value="{{ f.value }}" {% if user.filiere and user.filiere.value == f.value %}selected{% endif %}>{{ f.value }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-secondary">Année d'étude</label>
+                            <select name="annee" class="form-select">
+                                <option value="">-- Sélectionner --</option>
+                                {% for a in annees %}
+                                <option value="{{ a.value }}" {% if user.annee and user.annee.value == a.value %}selected{% endif %}>{{ a.value }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    {# PROGRAMME ET MATIÈRE #}
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Programme d'enseignement</label>
+                        <select name="programme" id="programmeSelect" class="form-select" onchange="updateMatieres()">
+                            <option value="">-- Sélectionner --</option>
+                            {% for p in programmes %}
+                            <option value="{{ p.value }}" {% if user.programme and user.programme.value == p.value %}selected{% endif %}>{{ p.value }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small fw-bold text-secondary">Matière / Spécialité</label>
+                        <select name="matiere" id="matiereSelect" class="form-select">
+                            <option value="">-- Choisir d'abord un programme --</option>
+                        </select>
+                    </div>
+
                 {% elif user.role.value == 'coordo' %}
-                <div class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info-subtle">
-                    <i class="bi bi-info-circle-fill me-2"></i> <strong>Mode Coordinateur :</strong> Vous supervisez l'ensemble des programmes sur le site de <strong>{{ user.site.value if user.site else 'votre affectation' }}</strong>.
-                </div>
+                    <div class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info-subtle">
+                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Mode Coordinateur :</strong> Vous supervisez l'ensemble des programmes sur le site de <strong>{{ user.site.value if user.site else 'votre affectation' }}</strong>.
+                    </div>
                 {% endif %}
             </div>
         </div>
-    {% endif %}
-</div>
-
-    {# --- ACTIONS DU FORMULAIRE --- #}
-    <div class="card border-0 shadow-sm bg-light mt-3">
-        <div class="card-body d-flex flex-wrap gap-3 justify-content-end">
-            {% if user.role.value == 'admin' %}
-                <button type="submit" class="btn btn-primary px-5 py-2 shadow-sm fw-bold">
-                    <i class="bi bi-save2 me-2"></i> Enregistrer les modifications
-                </button>
-            {% else %}
-                <button type="submit" name="profil_complete" value="" class="btn btn-white border px-4 py-2">
-                    <i class="bi bi-save me-2 text-muted"></i> Sauvegarder (Brouillon)
-                </button>
-                <button type="submit" name="profil_complete" value="on" class="btn btn-success px-4 py-2 shadow-sm fw-bold">
-                    <i class="bi bi-check-lg me-2"></i> Valider et finaliser mon profil
-                </button>
             {% endif %}
         </div>
-    </div>
+
+            {# --- ACTIONS DU FORMULAIRE --- #}
+            <div class="card border-0 shadow-sm bg-light mt-3">
+                <div class="card-body d-flex flex-wrap gap-3 justify-content-end">
+                    {% if user.role.value == 'admin' %}
+                        <button type="submit" class="btn btn-primary px-5 py-2 shadow-sm fw-bold">
+                            <i class="bi bi-save2 me-2"></i> Enregistrer les modifications
+                        </button>
+                    {% else %}
+                        <button type="submit" name="profil_complete" value="" class="btn btn-white border px-4 py-2">
+                            <i class="bi bi-save me-2 text-muted"></i> Sauvegarder (Brouillon)
+                        </button>
+                        <button type="submit" name="profil_complete" value="on" 
+                            class="btn {% if user.profil_complete %}btn-success{% else %}btn-danger animate-pulse{% endif %} px-4 py-2 shadow-sm fw-bold">
+                            <i class="bi bi-check-lg me-2"></i> Valider et finaliser mon profil
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
 </form>
 {% endblock %}
 
 {% block scripts %}
 <script>
 // --- CONFIGURATION DES MATIERES ---
-const MATIERES = {{ matieres | tojson if matieres else '{}' }};
+const MATIERES = JSON.parse('{{ matieres | tojson | safe if matieres else "{}" }}');
 const currentMatiere = "{{ user.matiere or '' }}";
 
 function updateMatieres() {

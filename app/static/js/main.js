@@ -136,42 +136,52 @@ function confirmDesactivation(userId, userEmail) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. On récupère les paramètres de l'URL
     const urlParams = new URLSearchParams(window.location.search);
     const msgKey = urlParams.get('msg');
 
-    // 2. Dictionnaire de messages
-   const toastMessages = {
-    'rejetee': {
-        title: 'Déclaration rejetée !',
-        text: 'Le motif a bien été enregistré.',
-        icon: 'warning'
-    },
-    'updated': {
-        title: 'Mise à jour réussie',
-        text: 'Les modifications ont été sauvegardées.',
-        icon: 'success'
-    },
-    'deleted': {
-        title: 'Supprimé !',
-        text: 'L\'élément a bien été retiré du référentiel.',
-        icon: 'success'
-    }
-};
+    const toastMessages = {
+        'rejetee': {
+            title: 'Déclaration rejetée !',
+            text: 'Le motif a bien été enregistré.',
+            icon: 'warning'
+        },
+        'updated': {
+            title: 'Mise à jour réussie',
+            text: 'Les modifications ont été sauvegardées.',
+            icon: 'success'
+        },
+        'submitted': {
+            title: 'Déclaration transmise !',
+            text: 'Votre déclaration a bien été envoyée pour validation.',
+            icon: 'success'
+        },
+        'deleted': {
+            title: 'Supprimé !',
+            text: "L'élément a bien été retiré du référentiel.",
+            icon: 'success'
+        },
+        'saved_as_draft_early': {
+            title: 'Soumission impossible',
+            text: "La soumission n'est possible qu'à partir du 1er du mois concerné. Vos modifications ont été sauvegardées en BROUILLON.",
+            icon: 'info',
+            confirmButtonColor: '#ffca2c'
+        }
+    };
 
-    // 3. Le sélecteur automatique
     if (msgKey && toastMessages[msgKey]) {
         const config = toastMessages[msgKey];
         
         Swal.fire({
-            width: '350px', // ✅ Ta largeur personnalisée
-            confirmButtonColor: '#3085d6',
-            ...config
+            width: '350px',
+            confirmButtonColor: '#3085d6', // Bleu par défaut, écrasé par config si besoin
+            ...config,
+            customClass: { confirmButton: 'fw-bold' }
+        }).then(() => {
+            // ✨ LE NETTOYAGE SE FAIT ICI, APRÈS LE CLIC SUR OK
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
         });
     }
-    // ✨ Le nettoyage de l'URL
-    const newUrl = window.location.pathname; // On ne garde que le chemin (ex: /declarations)
-    window.history.replaceState({}, document.title, newUrl);
 });
 
 function exporterCSV() {

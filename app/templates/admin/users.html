@@ -3,6 +3,16 @@
 {% block title %}Gestion des Utilisateurs – Avicenne Pay{% endblock %}
 
 {% block content %}
+<style>
+    #userTable tbody tr:hover {
+        background-color: rgba(13, 110, 253, 0.04) !important;
+        transition: background-color 0.2s ease;
+    }
+    .avatar-sm { font-size: 0.85rem; letter-spacing: -0.5px; }
+    .badge { font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+    .hover-primary:hover { color: #0d6efd !important; }
+</style>
+
 {# --- CHARGEMENT DES DEPENDANCES --- #}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
@@ -55,7 +65,7 @@
         <p class="text-muted small">Pilotez les accès et les profils des collaborateurs de votre périmètre.</p>
     </div>
 
-    {# --- SECTION 1 : FORMULAIRE DE CRÉATION (VERSION COMPLÈTE) --- #}
+    {# --- SECTION 1 : FORMULAIRE DE CRÉATION --- #}
     <div class="card shadow-sm mb-5 border-0">
         <div class="card-header bg-success text-white py-3">
             <h5 class="mb-0 fs-6">
@@ -84,7 +94,7 @@
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Rôle</label>
                     <select name="role" id="roleSelect" class="form-select shadow-sm" required onchange="toggleFields()">
-                        <option value="">-- Choisir --</option>
+                        <option value="">--</option>
                         {% set u_role = user.role.value if user.role else "" %}
                         {% if u_role == "admin" %}
                             <option value="admin">Administrateur</option>
@@ -104,17 +114,14 @@
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Site</label>
                     {% if u_role == "admin" %}
                         <select name="site" id="siteSelect" class="form-select shadow-sm">
-                            <option value="">-- Choisir --</option>
-                            {% for s in sites %}
-                                <option value="{{ s }}">{{ s }}</option>
-                            {% endfor %}
+                            <option value="">--</option>
+                            {% for s in sites %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
                         </select>
                     {% else %}
-                        <div class="p-2 bg-white rounded border small shadow-sm">{{ user.site.value if user.site else 'N/A' }}</div>
+                        <div class="p-2 bg-white rounded border small shadow-sm text-truncate">{{ user.site.value if user.site else 'N/A' }}</div>
                         <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
                     {% endif %}
                 </div>
-
                 <div id="container-perimetre" class="col-md-3">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Périmètre (Prog / Matière)</label>
                     {% if u_role in ["admin", "coordo"] %}
@@ -122,9 +129,7 @@
                             <div class="col-6">
                                 <select name="programme" id="programmeSelect" class="form-select form-select-sm shadow-sm" onchange="updateMatieres()">
                                     <option value="">Programme</option>
-                                    {% for p in programmes %}
-                                        <option value="{{ p }}">{{ p }}</option>
-                                    {% endfor %}
+                                    {% for p in programmes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
                                 </select>
                             </div>
                             <div class="col-6">
@@ -134,12 +139,12 @@
                             </div>
                         </div>
                     {% else %}
-                        <div class="d-flex gap-1">
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-2 flex-grow-1 text-truncate">
-                                <i class="bi bi-book me-1"></i> {{ user.programme.value if user.programme else 'N/A' }}
+                        <div class="d-flex gap-1 text-truncate">
+                            <span class="badge bg-primary-subtle text-primary border px-2 py-2 flex-grow-1">
+                                {{ user.programme.value if user.programme else 'N/A' }}
                             </span>
-                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-2 flex-grow-1 text-truncate">
-                                <i class="bi bi-tag me-1"></i> {{ user.matiere or 'N/A' }}
+                            <span class="badge bg-secondary-subtle text-secondary border px-2 py-2 flex-grow-1">
+                                {{ user.matiere or 'N/A' }}
                             </span>
                         </div>
                         <input type="hidden" name="programme" value="{{ user.programme.value if user.programme else '' }}">
@@ -148,9 +153,7 @@
                 </div>
 
                 <div class="col-md-1 text-end">
-                    <button type="submit" class="btn btn-success w-100 shadow">
-                        <i class="bi bi-check-lg"></i>
-                    </button>
+                    <button type="submit" class="btn btn-success w-100 shadow"><i class="bi bi-check-lg"></i></button>
                 </div>
             </form>
         </div>
@@ -166,7 +169,7 @@
         </div>
     </div>
 
-    {# --- SECTION 3 : TABLEAU (VERSION INTÉGRALE) --- #}
+    {# --- SECTION 3 : TABLEAU --- #}
     <div class="card shadow-sm border-0 overflow-hidden">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle" id="userTable">
@@ -182,14 +185,18 @@
                             Affectation <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
                         <th class="sortable" onclick="sortTable(3)" style="cursor: pointer;">
-                            Statut & Profil <i class="bi bi-arrow-down-up ms-1 small"></i>
+                            Matière <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
-                        <th class="text-end pe-4" style="width: 200px;">Actions</th>
+                        <th class="sortable" onclick="sortTable(4)" style="cursor: pointer;">
+                            Statut <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="text-end pe-4" style="width: 150px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for u in users %}
                     <tr {% if not u.is_active %}class="table-light opacity-75"{% endif %}>
+                        {# 1. COLLABORATEUR #}
                         <td class="ps-4">
                             <div class="d-flex align-items-center">
                                 <div class="avatar-sm me-3 {% if u.is_active %}bg-primary-subtle text-primary{% else %}bg-secondary-subtle text-secondary{% endif %} rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px;">
@@ -197,10 +204,7 @@
                                 </div>
                                 <div>
                                     <div class="fw-bold">
-                                        {# Lien vers les déclarations de cet utilisateur #}
-                                        <a href="/declarations?user_id={{ u.id }}" 
-                                        class="text-decoration-none hover-primary" 
-                                        title="Voir toutes les déclarations de ce collaborateur">
+                                        <a href="/declarations?user_id={{ u.id }}" class="text-decoration-none hover-primary text-dark">
                                             {% if u.prenom or u.nom %}{{ u.prenom }} {{ u.nom }}{% else %}{{ u.email }}{% endif %}
                                             <i class="bi bi-box-arrow-up-right ms-1 small text-muted" style="font-size: 0.7rem;"></i>
                                         </a>
@@ -209,59 +213,94 @@
                                 </div>
                             </div>
                         </td>
-                        <td>
-                            <span class="badge {% if u.role and u.role.value == 'admin' %}bg-danger{% else %}bg-light text-dark border{% endif %}">
-                                {{ u.role.value | upper if u.role else "N/A" }}
-                            </span>
-                        </td>
-                        <td>
-                            <div class="small fw-bold">{{ u.site.value if u.site else 'N/A' }}</div>
-                            <div class="text-muted small">{{ u.programme.value if u.programme else '' }}</div>
-                        </td>
-                        <td>
-                            <div class="mb-1">
-                                {% if u.is_active %}<span class="badge bg-success-subtle text-success">ACTIF</span>
-                                {% else %}<span class="badge bg-secondary text-white">INACTIF</span>{% endif %}
-                            </div>
-                        </td>
 
-                        {# --- COLONNE ACTIONS ALIGNÉE --- #}
-                        <td class="text-end pe-4">
-                            <div class="d-flex justify-content-end align-items-center gap-2">
-                                
-                                {# 1. Bouton Modifier (Toujours présent, sauf conditions spécifiques) #}
-                                {% if u_role != 'resp' or (u.role and u.role.value == 'tcp') %}
-                                    <a href="/admin/users/{{ u.id }}/edit" class="btn btn-sm btn-outline-primary px-3 shadow-sm">
-                                        <i class="bi bi-pencil-square me-1"></i> Modifier
-                                    </a>
+                        {# 2. RÔLE (RÉTABLISSEMENT DES COULEURS) #}
+                        <td>
+                            {% if u.role %}
+                                {% if u.role.value == 'admin' %}
+                                    <span class="badge rounded-pill bg-danger shadow-sm px-3">
+                                        <i class="bi bi-shield-lock-fill me-1"></i> ADMIN
+                                    </span>
+                                {% elif u.role.value == 'coordo' %}
+                                    <span class="badge rounded-pill bg-info text-dark shadow-sm px-3 border border-info">
+                                        <i class="bi bi-person-badge-fill me-1"></i> COORDO
+                                    </span>
+                                {% elif u.role.value == 'resp' %}
+                                    <span class="badge rounded-pill bg-primary shadow-sm px-3">
+                                        <i class="bi bi-person-workspace me-1"></i> RESP
+                                    </span>
+                                {% elif u.role.value == 'tcp' %}
+                                    <span class="badge rounded-pill bg-success shadow-sm px-3">
+                                        <i class="bi bi-mortarboard-fill me-1"></i> TCP
+                                    </span>
+                                {% else %}
+                                    <span class="badge rounded-pill bg-light text-dark border px-3">{{ u.role.value | upper }}</span>
                                 {% endif %}
+                            {% else %}
+                                <span class="badge bg-light text-dark border">N/A</span>
+                            {% endif %}
+                        </td>
 
-                                {# 2. Zone Activer/Désactiver (Largeur fixe pour l'alignement) #}
+                        {# 3. AFFECTATION (Site / Programme) #}
+                        <td>
+                            {% if u.role.value == 'admin' %}
+                                <div class="small fw-bold text-danger"><i class="bi bi-globe2 me-1"></i> GLOBAL</div>
+                            {% else %}
+                                <div class="small fw-bold">{{ u.site.value if u.site else 'N/A' }}</div>
+                                <div class="text-muted small" style="font-size: 0.75rem;">{{ u.programme.value if u.programme else '' }}</div>
+                            {% endif %}
+                        </td>
+
+                        {# 4. MATIÈRE (Prend la place de la filière supprimée) #}
+                        <td>
+                            {% if u.matiere %}
+                                <span class="badge bg-light text-primary border" style="font-size: 0.75rem;">{{ u.matiere }}</span>
+                            {% else %}
+                                <span class="text-muted small">-</span>
+                            {% endif %}
+                        </td>
+
+                        {# 5. STATUT #}
+                        <td>
+                            {% if u.is_active %}
+                                <span class="badge bg-success-subtle text-success">ACTIF</span>
+                            {% else %}
+                                <span class="badge bg-secondary text-white">INACTIF</span>
+                            {% endif %}
+                        </td>
+
+                        {# 6. ACTIONS #}
+                        <td class="text-end pe-4">
+                            <div class="d-flex justify-content-end align-items-center">
+                                
+                                {# Bloc Modification : On utilise une marge pour le séparer de l'action suivante #}
+                                <div class="me-3">
+                                    {% if u_role == 'admin' or (u_role == 'resp' and u.role.value == 'tcp') or (u_role == 'coordo' and u.role.value in ['resp', 'tcp']) %}
+                                    <a href="/admin/users/{{ u.id }}/edit" class="btn btn-sm btn-outline-primary px-3 shadow-sm" title="Modifier">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+
+                                {# Bloc Activation/Désactivation : Largeur fixe de 40px pour maintenir l'alignement global #}
                                 <div style="width: 40px;" class="d-flex justify-content-center">
                                     {% if u_role == 'admin' and u.id != user.id %}
                                         {% if u.is_active %}
-                                            <button type="button" 
-                                                    onclick="confirmDesactivation('{{ u.id }}', '{{ u.email }}')" 
-                                                    class="btn btn-sm btn-link text-danger p-0 border-0 shadow-none"
-                                                    title="Désactiver">
+                                            <button type="button" onclick="confirmDesactivation('{{ u.id }}', '{{ u.email }}')" class="btn btn-sm btn-link text-danger p-0 border-0 shadow-none" title="Désactiver">
                                                 <i class="bi bi-person-x-fill fs-5"></i>
                                             </button>
                                             <form id="desac-form-{{ u.id }}" action="/admin/users/{{ u.id }}/desactivate" method="post" style="display: none;"></form>
                                         {% else %}
-                                            <button type="button" 
-                                                    onclick="confirmActivation('{{ u.id }}', '{{ u.email }}')" 
-                                                    class="btn btn-sm btn-link text-success p-0 border-0 shadow-none"
-                                                    title="Activer">
+                                            <button type="button" onclick="confirmActivation('{{ u.id }}', '{{ u.email }}')" class="btn btn-sm btn-link text-success p-0 border-0 shadow-none" title="Réactiver">
                                                 <i class="bi bi-person-check-fill fs-5"></i>
                                             </button>
                                             <form id="activ-form-{{ u.id }}" action="/admin/users/{{ u.id }}/activate" method="post" style="display: none;"></form>
                                         {% endif %}
-                                    {% else %}
-                                        {# Espace vide pour maintenir l'alignement sur ta ligne d'admin #}
-                                        <div style="width: 24px;"></div>
+                                    {% elif u.id == user.id %}
+                                        {# Placeholder discret pour votre propre compte pour garder l'alignement #}
+                                        <i class="bi bi-shield-check text-muted opacity-25 fs-5" title="Votre compte (protégé)"></i>
                                     {% endif %}
                                 </div>
-
                             </div>
                         </td>
                     </tr>
@@ -273,8 +312,19 @@
 </div>
 
 <script>
-// 1. Périmètre / Matières
 const MATIERES = JSON.parse('{{ matieres_par_prog | tojson | safe }}');
+
+function toggleVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const icon = btn.querySelector('i');
+    if (input.type === "password") {
+        input.type = "text";
+        icon.className = "bi bi-eye-slash";
+    } else {
+        input.type = "password";
+        icon.className = "bi bi-eye";
+    }
+}
 
 function updateMatieres() {
     const prog = document.getElementById('programmeSelect')?.value;
@@ -293,29 +343,50 @@ function toggleFields() {
     const role = document.getElementById('roleSelect')?.value;
     const s = document.getElementById('container-site');
     const p = document.getElementById('container-perimetre');
-    if(s) s.style.display = (role === 'admin') ? 'none' : 'block';
-    if(p) p.style.display = (role === 'admin' || role === 'coordo') ? 'none' : 'block';
+    const f = document.getElementById('container-filiere');
+
+    // 1. Gestion du Site (Caché pour Admin)
+    if (s) {
+        const isVisible = (role !== 'admin' && role !== '');
+        s.style.display = isVisible ? 'block' : 'none';
+        // Si on cache, on remet à zéro pour éviter d'envoyer une donnée inutile
+        if (!isVisible) s.querySelector('select, input')?.setAttribute('disabled', 'disabled');
+        else s.querySelector('select, input')?.removeAttribute('disabled');
+    }
+
+    // 2. Gestion Périmètre & Filière (Caché pour Admin et Coordo)
+    const needsPerimetre = (role === 'resp' || role === 'tcp');
+    
+    if (p) {
+        p.style.display = needsPerimetre ? 'block' : 'none';
+        if (!needsPerimetre) p.querySelectorAll('select').forEach(el => el.value = "");
+    }
+    
+    if (f) {
+        f.style.display = needsPerimetre ? 'block' : 'none';
+    }
 }
 
-// 2. Activation
 function confirmActivation(userId, userEmail) {
     Swal.fire({
         title: 'Réactiver le compte ?',
         html: `Voulez-vous redonner l'accès à :<br><strong>${userEmail}</strong>`,
         icon: 'question',
         showCancelButton: true,
-        confirmButtonColor: '#198754', // Vert
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Oui, réactiver',
-        cancelButtonText: 'Annuler'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            document.getElementById(`activ-form-${userId}`).submit();
-        }
-    });
+        confirmButtonColor: '#198754', confirmButtonText: 'Oui, réactiver', cancelButtonText: 'Annuler'
+    }).then((result) => { if (result.isConfirmed) document.getElementById(`activ-form-${userId}`).submit(); });
 }
 
-// 3. Gestion de la recherche
+function confirmDesactivation(userId, userEmail) {
+    Swal.fire({
+        title: 'Désactiver le compte ?',
+        html: `Bloquer l'accès pour :<br><strong>${userEmail}</strong>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545', confirmButtonText: 'Oui, désactiver', cancelButtonText: 'Annuler'
+    }).then((result) => { if (result.isConfirmed) document.getElementById(`desac-form-${userId}`).submit(); });
+}
+
 document.getElementById('searchInput')?.addEventListener('keyup', function() {
     const filter = this.value.toLowerCase();
     document.querySelectorAll('#userTable tbody tr').forEach(row => {
@@ -326,47 +397,20 @@ document.getElementById('searchInput')?.addEventListener('keyup', function() {
 function sortTable(n) {
     var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
     table = document.getElementById("userTable");
-    switching = true;
-    dir = "asc";
-    
+    switching = true; dir = "asc";
     while (switching) {
-        switching = false;
-        rows = table.rows;
-        
+        switching = false; rows = table.rows;
         for (i = 1; i < (rows.length - 1); i++) {
             shouldSwitch = false;
             x = rows[i].getElementsByTagName("TD")[n];
             y = rows[i + 1].getElementsByTagName("TD")[n];
-            
-            // On nettoie le texte pour éviter les problèmes d'espaces/retours à la ligne
             let xText = x.innerText.trim().toLowerCase();
             let yText = y.innerText.trim().toLowerCase();
-
-            // Gestion spécifique pour la colonne Statut & Profil (index 3)
-            // On s'assure que "ACTIF" arrive avant "INACTIF" en ASC
-            if (n === 3) {
-                // On peut prioriser le premier mot trouvé dans la cellule
-                xText = x.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
-                yText = y.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
-            }
-
-            if (dir == "asc") {
-                if (xText > yText) { shouldSwitch = true; break; }
-            } else if (dir == "desc") {
-                if (xText < yText) { shouldSwitch = true; break; }
-            }
+            if (dir == "asc") { if (xText > yText) { shouldSwitch = true; break; } }
+            else if (dir == "desc") { if (xText < yText) { shouldSwitch = true; break; } }
         }
-        
-        if (shouldSwitch) {
-            rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-            switching = true;
-            switchcount++;
-        } else {
-            if (switchcount == 0 && dir == "asc") {
-                dir = "desc";
-                switching = true;
-            }
-        }
+        if (shouldSwitch) { rows[i].parentNode.insertBefore(rows[i + 1], rows[i]); switching = true; switchcount++; }
+        else { if (switchcount == 0 && dir == "asc") { dir = "desc"; switching = true; } }
     }
     updateSortIcons(n, dir);
 }
@@ -374,9 +418,7 @@ function sortTable(n) {
 function updateSortIcons(columnIndex, direction) {
     const headers = document.querySelectorAll('th.sortable i');
     headers.forEach((icon, index) => {
-        // Réinitialise toutes les icônes
         icon.className = 'bi bi-arrow-down-up ms-1 small text-muted';
-        // Met en avant la colonne triée
         if (index === columnIndex) {
             icon.className = direction === 'asc' ? 'bi bi-sort-alpha-down text-primary' : 'bi bi-sort-alpha-up-alt text-primary';
         }

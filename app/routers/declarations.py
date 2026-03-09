@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, delete
 from sqlalchemy.orm import selectinload
+from datetime import date
 from typing import Optional, List
 
 from app.database import get_db
@@ -29,8 +30,9 @@ def filter_missions_for_user(missions: list, user: User) -> list:
     
     filtered_missions = []
     for m in missions:
-        if m.resp_only and user.role not in (Role.admin, Role.coordo, Role.resp):
-            continue
+        if m.resp_only:
+            if user.role != Role.resp:
+                continue
             
         if authorized_sm_ids:
             m.sous_missions = [sm for sm in m.sous_missions if sm.id in authorized_sm_ids]
@@ -41,6 +43,7 @@ def filter_missions_for_user(missions: list, user: User) -> list:
     return filtered_missions
 
 # --- LISTE DES DÉCLARATIONS ---
+# --- LISTE DES DÉCLARATIONS ---
 @router.get("", response_class=HTMLResponse)
 async def list_declarations(
     request: Request,
@@ -48,27 +51,24 @@ async def list_declarations(
     mois: Optional[str] = Query(None),
     annee: Optional[str] = Query(None),
     statut: Optional[str] = Query(None),
-    user_id: Optional[int] = Query(None), # <-- Ajout du paramètre user_id
+    user_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Declaration).join(User, Declaration.user_id == User.id).options(selectinload(Declaration.user))
+    # Base de la requête avec jointure sur User pour filtrer par Site/Matière
+    query = select(Declaration).options(selectinload(Declaration.user)).join(User)
 
-    # --- FILTRES DE SÉCURITÉ / RÔLES ---
+    # --- 1. FILTRES DE SÉCURITÉ / RÔLES (Périmètre de visibilité) ---
     if current_user.role == Role.admin:
-        if site and site != "":
-            query = query.where(User.site == Site(site))
-        
-        # FILTRE SPÉCIFIQUE ADMIN : par utilisateur
-        if user_id:
-            query = query.where(Declaration.user_id == user_id)
+        # L'admin voit tout par défaut, on ne restreint rien ici
+        pass
             
     elif current_user.role == Role.coordo:
+        # Le coordo ne voit que son site
         query = query.where(User.site == current_user.site)
-        if user_id: # Un coordo peut aussi filtrer s'il a l'ID
-             query = query.where(Declaration.user_id == user_id)
              
     elif current_user.role == Role.resp:
+        # Le responsable voit ses décla + celles des TCP de sa matière/site
         query = query.where(
             or_(
                 Declaration.user_id == current_user.id,
@@ -79,24 +79,38 @@ async def list_declarations(
                 )
             )
         )
-        if user_id: # Filtre supplémentaire si le responsable clique sur un de ses TCP
-            query = query.where(Declaration.user_id == user_id)
     else:
+        # Intervenant classique : seulement les siennes
         query = query.where(Declaration.user_id == current_user.id)
 
-    # --- FILTRES OPTIONNELS (Formulaire) ---
+    # --- 2. FILTRES DYNAMIQUES (Appliqués à tous les rôles autorisés) ---
+    
+    # Filtre par Collaborateur spécifique (passé par l'URL ou bandeau)
+    if user_id:
+        query = query.where(Declaration.user_id == user_id)
+    
+    # Filtre par Site (pour Admin principalement, ou affinage Coordo)
+    if site and site.strip():
+        query = query.where(User.site == site)
+
+    # Filtre par Mois
     if mois and mois.isdigit():
         query = query.where(Declaration.mois == int(mois))
+        
+    # Filtre par Année
     if annee and annee.isdigit():
         query = query.where(Declaration.annee == int(annee))
-    if statut and statut != "":
-        query = query.where(Declaration.statut == StatutDeclaration(statut))
+        
+    # Filtre par Statut
+    if statut and statut.strip():
+        query = query.where(Declaration.statut == statut)
 
-    query = query.order_by(Declaration.annee.desc(), Declaration.mois.desc())
+    # --- 3. EXÉCUTION ---
+    query = query.order_by(Declaration.annee.desc(), Declaration.mois.desc(), Declaration.id.desc())
     result = await db.execute(query)
     declarations = result.scalars().all()
 
-    # Récupération des infos de l'utilisateur filtré (pour l'affichage du nom dans le template)
+    # Récupération de l'user sélectionné pour le bandeau d'info
     selected_user = None
     if user_id:
         user_res = await db.execute(select(User).where(User.id == user_id))
@@ -110,13 +124,14 @@ async def list_declarations(
             "declarations": declarations,
             "mois_labels": MOIS_LABELS, 
             "sites": list(Site), 
-            "current_site": site,
-            "current_mois": int(mois) if (mois and mois.isdigit()) else None, 
-            "current_annee": int(annee) if (annee and annee.isdigit()) else None, 
-            "current_statut": statut,
-            "current_user_id": user_id, # <-- On renvoie l'ID
-            "selected_user": selected_user, # <-- On renvoie l'objet User complet
             "statuts": list(StatutDeclaration),
+            "selected_user": selected_user,
+            # Indispensable pour garder les filtres sélectionnés dans le HTML
+            "current_site": site,
+            "current_mois": mois,
+            "current_annee": annee,
+            "current_statut": statut,
+            "current_user_id": user_id,
         },
     )
 
@@ -168,25 +183,45 @@ async def create_declaration(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if not current_user.profil_complete:
-        return RedirectResponse("/profile?warning=profil_incomplet", status_code=302)
+    # 1. VERIFICATION DE SECURITE (Profil complet pour RESP et TCP)
+    if current_user.role in [Role.resp, Role.tcp]:
+        # On vérifie physiquement la présence des données de paiement
+        champs_critiques = [
+            current_user.nom, 
+            current_user.prenom, 
+            current_user.adresse, 
+            current_user.nss_encrypted, 
+            current_user.iban_encrypted
+        ]
+        
+        if not all(val and str(val).strip() for val in champs_critiques):
+            # On force la mise à jour du flag en base s'il était faux
+            current_user.profil_complete = False
+            await db.commit()
+            return RedirectResponse("/profile?error=paiement_requis", status_code=303)
 
+    # 2. RECUPERATION DES DONNEES DU FORMULAIRE
     form_data = await request.form()
-    mois = int(form_data.get("mois", datetime.now().month))
-    annee = int(form_data.get("annee", datetime.now().year))
+    try:
+        mois = int(form_data.get("mois", datetime.now().month))
+        annee = int(form_data.get("annee", datetime.now().year))
+    except ValueError:
+        return RedirectResponse("/declarations?error=date_invalide", status_code=303)
+        
     action = form_data.get("action", "brouillon")
 
-    existing_check = await db.execute(
-        select(Declaration).where(
-            Declaration.user_id == current_user.id,
-            Declaration.mois == mois,
-            Declaration.annee == annee
-        )
+    # 3. VERIFICATION DES DOUBLONS (Une seule déclaration par mois/annee par utilisateur)
+    stmt_check = select(Declaration).where(
+        Declaration.user_id == current_user.id,
+        Declaration.mois == mois,
+        Declaration.annee == annee
     )
+    existing_check = await db.execute(stmt_check)
     if existing_check.scalars().first():
-        return RedirectResponse("/declarations?error=deja_existant", status_code=302)
+        return RedirectResponse(f"/declarations?error=deja_existant&m={mois}&a={annee}", status_code=303)
 
-    declaration = Declaration(
+    # 4. CREATION DE LA DECLARATION PARENTE
+    new_dec = Declaration(
         user_id=current_user.id,
         mois=mois,
         annee=annee,
@@ -194,24 +229,52 @@ async def create_declaration(
         site=current_user.site,
         programme=current_user.programme
     )
-    db.add(declaration)
-    await db.flush()
+    db.add(new_dec)
+    await db.flush()  # Pour récupérer l'ID de la déclaration
 
+    # 5. AJOUT DES LIGNES (Missions)
+    lignes_ajoutees = 0
     for key, value in form_data.items():
         if key.startswith("quantite_") and value:
             try:
                 sm_id = int(key.split("_")[1])
-                quantite = float(value.replace(',', '.'))
+                # Nettoyage du format numérique (gère virgule et point)
+                val_clean = str(value).replace(',', '.').strip()
+                quantite = float(val_clean)
+                
                 if quantite > 0:
-                    db.add(LigneDeclaration(declaration_id=declaration.id, sous_mission_id=sm_id, quantite=quantite))
-            except (ValueError, IndexError): pass
+                    nouvelle_ligne = LigneDeclaration(
+                        declaration_id=new_dec.id, 
+                        sous_mission_id=sm_id, 
+                        quantite=quantite
+                    )
+                    db.add(nouvelle_ligne)
+                    lignes_ajoutees += 1
+            except (ValueError, IndexError):
+                continue
+
+    # 6. GESTION DE L'ACTION
+    msg = "created" # Message par défaut pour le brouillon
 
     if action == "soumettre":
-        declaration.statut = StatutDeclaration.soumise
-        declaration.soumise_le = datetime.now()
+        from datetime import date
+        aujourdhui = date.today()
+        date_ouverture = date(annee, mois, 1)
 
+        if aujourdhui < date_ouverture:
+            # On force le mode brouillon car il est trop tôt
+            action = "brouillon"
+            msg = "saved_as_draft_early"
+            # Note : new_dec.statut est déjà StatutDeclaration.brouillon par défaut
+        else:
+            # OK : On passe en soumise
+            new_dec.statut = StatutDeclaration.soumise
+            new_dec.soumise_le = datetime.now()
+            msg = "submitted"
+
+    # 7. FINALISATION
     await db.commit()
-    return RedirectResponse("/declarations", status_code=302)
+    return RedirectResponse(f"/declarations?msg={msg}", status_code=303)
 
 # --- DÉTAIL D'UNE DÉCLARATION ---
 @router.get("/{decl_id}", response_class=HTMLResponse)
@@ -415,10 +478,29 @@ async def update_declaration(
 
     form_data = await request.form()
     action = form_data.get("action", "brouillon")
+    msg = "updated" # 🏷️ Message par défaut
 
-    # Suppression/Remplacement des lignes
+    # --- 1. SÉCURITÉ ET GESTION DU STATUT ---
+    if action == "soumettre":
+        from datetime import date
+        aujourdhui = date.today()
+        date_ouverture = date(declaration.annee, declaration.mois, 1)
+
+        if aujourdhui < date_ouverture:
+            # 🔄 Au lieu de bloquer, on transforme la soumission en brouillon
+            action = "brouillon"
+            msg = "saved_as_draft_early"
+        else:
+            # ✅ La date est valide, on change le statut
+            declaration.statut = StatutDeclaration.soumise
+            declaration.soumise_le = datetime.now()
+            declaration.commentaire_admin = None
+            msg = "submitted"
+
+    # --- 2. MISE À JOUR DES LIGNES (S'exécute même si action est devenue "brouillon") ---
     await db.execute(delete(LigneDeclaration).where(LigneDeclaration.declaration_id == decl_id))
     
+    lignes_ajoutees = 0
     for key, value in form_data.items():
         if key.startswith("quantite_") and value:
             try:
@@ -426,12 +508,14 @@ async def update_declaration(
                 quantite = float(value.replace(',', '.'))
                 if quantite > 0:
                     db.add(LigneDeclaration(declaration_id=decl_id, sous_mission_id=sm_id, quantite=quantite))
+                    lignes_ajoutees += 1
             except (ValueError, IndexError): pass
 
-    if action == "soumettre":
-        declaration.statut = StatutDeclaration.soumise
-        declaration.soumise_le = datetime.now()
-        declaration.commentaire_admin = None
+    # --- 3. GESTION DU CAS VIDE ---
+    if lignes_ajoutees == 0:
+        await db.rollback()
+        return RedirectResponse(f"/declarations/{decl_id}/edit?error=vide", status_code=303)
 
     await db.commit()
-    return RedirectResponse(f"/declarations/{decl_id}", status_code=302)
+    # On ajoute le paramètre msg à l'URL pour ton front-end
+    return RedirectResponse(f"/declarations/{decl_id}?msg={msg}", status_code=302)

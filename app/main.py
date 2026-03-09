@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Form
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 from passlib.context import CryptContext
 from itsdangerous import URLSafeTimedSerializer
@@ -19,6 +20,7 @@ from app.models.declaration import Declaration
 from app.routers import auth, profile, missions, declarations, admin, users
 from app.models.mission import Mission
 from app.models.sub_mission import SousMission
+from app.routers import admin
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +30,8 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Avicenne Pay", lifespan=lifespan)
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # MONTAGE LES STATIQUES
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -41,8 +45,28 @@ app.include_router(declarations.router)
 app.include_router(admin.router)
 app.include_router(users.router)
 
-# --- ROUTES PRINCIPALES ---
+# --- MIDDLEWARE DE SÉCURITÉ CSP ---
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # On définit une politique large pour le développement
+    csp_directives = {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
+        "style-src": "'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+        "style-src-elem": "'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+        "font-src": "'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+        "connect-src": "'self' https://cdn.jsdelivr.net",
+        "img-src": "'self' data: https:"
+    }
+    
+    csp_string = "; ".join([f"{k} {v}" for k, v in csp_directives.items()])
+    
+    response.headers["Content-Security-Policy"] = csp_string
+    return response
 
+# --- ROUTES PRINCIPALES ---
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/dashboard", status_code=302)
@@ -134,3 +158,4 @@ async def setup_create_admin(
             "setup.html", 
             {"request": request, "error": "Une erreur interne est survenue."}
         )
+
