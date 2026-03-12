@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from decimal import Decimal
 from sqlalchemy import String, select, func, and_, or_, text, desc
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, Session
 from typing import Optional, List
 import csv
 import io
@@ -28,6 +28,7 @@ from app.config import FERNET_KEY
 from app.dependencies import get_current_user, require_role
 
 # Imports des modèles
+from app import models
 from app.models.user import User, Role, Site, Programme, Filiere, Annee, MATIERES
 from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
 from app.models.sub_mission import SousMission
@@ -154,7 +155,8 @@ async def get_stats(
         else:
             filters.append(SousMission.titre == mission_nom)
 
-    # --- 4. CALCULS GLOBAUX ---
+# --- 4. CALCULS GLOBAUX (Volumes et Coûts détaillés) ---
+    # 4a. On calcule d'abord le montant total global (pour les KPIs du haut)
     stmt_argent = (
         select(func.sum(LigneDeclaration.quantite * SousMission.tarif))
         .select_from(Declaration)
@@ -166,17 +168,44 @@ async def get_stats(
     res_argent = await db.execute(stmt_argent)
     total_avicenne = res_argent.scalar() or 0.0
 
-    stmt_unites = (
-        select(SousMission.unite, func.sum(LigneDeclaration.quantite))
+   # --- 4b. On calcule le détail par MISSION/SOUS-MISSION (pour votre tableau) ---
+    stmt_unites_details = (
+        select(
+            Mission.titre, 
+            SousMission.titre, 
+            func.sum(LigneDeclaration.quantite),
+            func.sum(LigneDeclaration.quantite * SousMission.tarif),
+            SousMission.unite
+        )
         .select_from(Declaration)
         .join(User, Declaration.user_id == User.id)
         .join(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
         .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
+        .join(Mission, SousMission.mission_id == Mission.id)  # <--- INDISPENSABLE
         .where(and_(*filters)) 
-        .group_by(SousMission.unite)
+        .group_by(Mission.titre, SousMission.titre, SousMission.unite)
     )
-    res_unites = await db.execute(stmt_unites)
-    stats_unites = {row[0]: row[1] for row in res_unites.all() if row[0]}
+    
+    # Cette ligne doit être indentée (4 espaces) pour être dans la fonction
+    res_details = await db.execute(stmt_unites_details)
+    
+    stats_unites = {}
+    stats_couts = {}
+    
+    for row in res_details.all():
+        cle_unique = f"{row[0]} | {row[1]}"
+        quantite_totale = float(row[2] or 0.0) 
+        cout_total = float(row[3] or 0.0)
+        unite_label = row[4] or "unité"
+        
+        stats_unites[cle_unique] = {
+            "val": quantite_totale,
+            "unit": unite_label
+        }
+        stats_couts[cle_unique] = cout_total
+
+    sorted_keys = sorted(stats_unites.keys(), key=lambda k: stats_couts.get(k, 0), reverse=True)
+    stats_unites = {k: stats_unites[k] for k in sorted_keys}
 
     # --- 5. ÉVOLUTION MENSUELLE ---
     stmt_comp = (
@@ -214,7 +243,7 @@ async def get_stats(
             curr_a += 1
         if len(data_lyon_est) > 36: break # Sécurité 3 ans
 
-    # --- 6. TOP 10 & SITES ---
+ # --- 6. TOP 10 & SITES (CORRIGÉ) ---
     stmt_sites = (
         select(User.site, func.sum(LigneDeclaration.quantite * SousMission.tarif))
         .select_from(User)
@@ -249,6 +278,23 @@ async def get_stats(
         .limit(10)
     )
     res_users = await db.execute(stmt_users)
+    
+    # --- TRANSFORMATION POUR LE TEMPLATE (Crucial) ---
+    stats_users_clean = []
+    for row in res_users.all():
+        user_obj = row[0]  # L'objet User
+        
+        # On extrait la valeur du rôle proprement ici pour éviter le bug hasattr dans Jinja
+        role_display = "N/A"
+        if user_obj.role:
+            role_display = user_obj.role.value if hasattr(user_obj.role, 'value') else str(user_obj.role)
+
+        stats_users_clean.append({
+            "user": user_obj,
+            "role_display": role_display,
+            "total_brut": float(row[1] or 0),
+            "total_heures": float(row[2] or 0)
+        })
 
     return templates.TemplateResponse(
         "admin/stats.html", 
@@ -261,6 +307,7 @@ async def get_stats(
             "total_lyon_est": total_lyon_est,
             "total_lyon_sud": total_lyon_sud,
             "stats_unites": stats_unites,
+            "stats_couts": stats_couts,
             "current_start_mois": start_mois,
             "current_start_annee": start_annee,
             "current_end_mois": end_mois,
@@ -273,7 +320,7 @@ async def get_stats(
             "toutes_les_matieres": toutes_les_matieres, 
             "missions_groupes": missions_groupes,
             "stats_sites": stats_sites, 
-            "stats_users": res_users.all()
+            "stats_users": stats_users_clean  # On passe la liste nettoyée
         }
     )
 
@@ -435,7 +482,7 @@ async def create_user(
     current_user: User = Depends(staff_required), 
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Préparation des données selon les droits du créateur
+    # 1. Préparation des données
     final_role = Role(role)
     final_site = site
     final_prog = programme
@@ -449,58 +496,40 @@ async def create_user(
     elif current_user.role == Role.coordo:
         final_site = current_user.site.value
 
-    # 2. Tentative de création
+    # 2. Tentative de création avec gestion d'erreur précise
     try:
         new_user = User(
-            email=email.lower().strip(), # Sécurité : email en minuscules et sans espaces
+            email=email.lower().strip(),
             hashed_password=pwd_context.hash(password), 
             role=final_role,
             site=Site(final_site) if final_site else None,
             programme=Programme(final_prog) if final_prog else None,
             matiere=final_matiere,
-            is_active=True # On s'assure qu'il est actif par défaut
+            is_active=True
         )
         db.add(new_user)
         await db.commit()
         return RedirectResponse("/admin/users?msg=created", status_code=303)
 
-    except IntegrityError:
-        # En cas de doublon d'email (UniqueViolationError)
+    except IntegrityError as e:
         await db.rollback()
-        return RedirectResponse("/admin/users?error=email_exists", status_code=303)
-    
-    except Exception as e:
-        # Pour toute autre erreur imprévue
-        await db.rollback()
-        print(f"Erreur lors de la création : {e}")
+        error_info = str(e.orig) # Récupère l'erreur SQL brute
+        
+        # Détection de l'index d'unicité du Responsable
+        if "uq_resp_site_programme_matiere" in error_info:
+            return RedirectResponse("/admin/users?error=resp_exists", status_code=303)
+        
+        # Détection du doublon d'email (clé par défaut)
+        elif "users_email_key" in error_info:
+            return RedirectResponse("/admin/users?error=email_exists", status_code=303)
+        
+        # Autre erreur d'intégrité
         return RedirectResponse("/admin/users?error=db_error", status_code=303)
 
-@router.post("/users/{user_id}/edit")
-async def edit_user_save(
-    user_id: int,
-    email: str = Form(...),
-    role: str = Form(...),
-    site: Optional[str] = Form(None),
-    programme: Optional[str] = Form(None),
-    matiere: Optional[str] = Form(None),
-    password: Optional[str] = Form(None),
-    current_user: User = Depends(staff_required),
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(select(User).where(User.id == user_id))
-    u = result.scalar_one_or_none()
-    if not u: raise HTTPException(status_code=404)
-
-    u.email = email
-    u.role = Role(role)
-    u.site = Site(site) if site else None
-    u.programme = Programme(programme) if programme else None
-    u.matiere = matiere
-    if password and len(password.strip()) >= 8:
-        u.hashed_password = pwd_context.hash(password)
-
-    await db.commit()
-    return RedirectResponse("/admin/users?msg=updated", status_code=303)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Erreur création : {e}")
+        return RedirectResponse("/admin/users?error=db_error", status_code=303)
 
 @router.post("/users/{user_id}/desactivate")
 async def desactivate_user(
@@ -525,18 +554,19 @@ async def desactivate_user(
     return RedirectResponse("/admin/users?msg=disabled", status_code=303)
 
 @router.post("/users/{user_id}/activate")
-async def activate_user(
-    user_id: int, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(admin_only)
-):
+async def activate_user(user_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.id == user_id))
     user_to_mod = result.scalar_one_or_none()
     
     if user_to_mod:
-        user_to_mod.is_active = True # On réactive !
-        await db.commit()
-        return RedirectResponse("/admin/users?msg=activated", status_code=303)
+        try:
+            user_to_mod.is_active = True
+            await db.commit()
+            return RedirectResponse("/admin/users?msg=activated", status_code=303)
+        except IntegrityError:
+            await db.rollback()
+            # On renvoie l'erreur spécifique si un autre RESP est déjà actif
+            return RedirectResponse("/admin/users?error=resp_exists", status_code=303)
     
     return RedirectResponse("/admin/users?error=not_found", status_code=303)
 
@@ -667,14 +697,25 @@ async def manage_referentiel(
     })
 
 # --- ACTION : AJOUTER MISSION PARENT ---
-@router.post("/referentiel/mission/add")
+@router.post("/referentiel/missions/add")
 async def admin_add_mission(
     request: Request,
     nom: str = Form(...),
+    # On utilise Optional[bool] avec None pour gérer l'absence de la checkbox
+    resp_only: Optional[bool] = Form(None), 
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(catalogue_manager)
 ):
-    new_mission = Mission(titre=nom, ordre=0, is_active=True)
+    # Si la checkbox n'est pas cochée, elle n'est pas envoyée, donc on met False par défaut
+    is_resp_val = True if resp_only else False
+
+    new_mission = Mission(
+        titre=nom, 
+        ordre=0, 
+        is_active=True,
+        resp_only=is_resp_val
+    )
+    
     db.add(new_mission)
     await db.commit()
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
@@ -709,7 +750,7 @@ async def edit_user_form(
     request: Request, 
     user_id: int, 
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(check_admin)
+    current_admin: User = Depends(catalogue_manager)
 ):
     user_to_edit = await db.get(User, user_id)
     if not user_to_edit:
@@ -731,52 +772,51 @@ async def edit_user_form(
     })
 
 @router.post("/users/{user_id}/edit")
-async def edit_user_post(
+async def edit_user_save(
     user_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db), 
     admin: User = Depends(check_admin),
-    email: str = Form(...),
-    nom: Optional[str] = Form(None),
-    prenom: Optional[str] = Form(None),
     role: str = Form(...),
     site: Optional[str] = Form(None),
-    filiere: Optional[str] = Form(None),
-    annee: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
     password: Optional[str] = Form(None)
+    # J'ai retiré email, nom, prenom, filiere, annee qui ne sont plus dans ton formulaire
 ):
-    user_to_update = await db.get(User, user_id)
-    if not user_to_update:
+    result = await db.execute(select(User).where(User.id == user_id))
+    u = result.scalar_one_or_none()
+    
+    if not u: 
         return RedirectResponse(url="/admin/users?error=notfound", status_code=303)
 
     try:
-        # 1. Champs texte
-        user_to_update.email = email.lower().strip()
-        user_to_update.nom = nom.upper() if nom else None
-        user_to_update.prenom = prenom.capitalize() if prenom else None
-        user_to_update.matiere = matiere if matiere else None
+        # Mise à jour des permissions et affectations
+        u.role = Role(role)
+        u.site = Site(site) if site and site.strip() else None
+        u.programme = Programme(programme) if programme and programme.strip() else None
+        u.matiere = matiere if matiere and matiere.strip() else None
 
-        # 2. Enums (Conversion sécurisée)
-        user_to_update.role = Role(role)
-        user_to_update.site = Site(site) if site else None
-        user_to_update.filiere = Filiere(filiere) if filiere else None
-        user_to_update.annee = Annee(annee) if annee else None
-        user_to_update.programme = Programme(programme) if programme else None
+        # Sécurité : Si Admin, on nettoie les affectations pédagogiques
+        if u.role == Role.admin:
+            u.site = None
+            u.programme = None
+            u.matiere = None
 
-        # 3. Mot de passe (Uniquement si rempli)
+        # Mot de passe (Uniquement si rempli)
         if password and len(password.strip()) >= 8:
-            user_to_update.hashed_password = pwd_context.hash(password)
+            u.hashed_password = pwd_context.hash(password)
 
         await db.commit()
         return RedirectResponse(url="/admin/users?msg=updated", status_code=303)
 
     except IntegrityError:
         await db.rollback()
-        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=email_exists", status_code=303)
-    except ValueError as e:
+        # Probablement un doublon de Responsable sur la même matière
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=duplicate_resp", status_code=303)
+    except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=f"Donnée invalide : {str(e)}")
+        logger.error(f"Erreur edit : {e}")
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
     
 @router.post("/referentiel/missions/{mission_id}/toggle-active")
 async def toggle_mission_active(
@@ -790,8 +830,38 @@ async def toggle_mission_active(
     if not mission:
         raise HTTPException(status_code=404, detail="Mission non trouvée")
 
-    # On inverse l'état (True -> False ou False -> True)
     mission.is_active = not mission.is_active
 
     await db.commit()
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
+
+@router.post("/referentiel/missions/{mission_id}/edit")
+async def edit_mission_parent(
+    mission_id: int,
+    nom: str = Form(...),
+    resp_only: bool = Form(False),
+    db: AsyncSession = Depends(get_db) 
+):
+    print(f"--- Tentative d'édition mission {mission_id} (Asynchrone) ---")
+    
+    # 1. Nouvelle syntaxe SQLAlchemy 2.0 pour l'asynchrone
+    result = await db.execute(select(Mission).filter(Mission.id == mission_id))
+    mission = result.scalars().first()
+
+    if not mission:
+        print(f"Erreur : Mission {mission_id} introuvable")
+        return RedirectResponse(url="/admin/referentiel/missions?msg=error", status_code=303)
+
+    # 2. Mise à jour des champs
+    mission.titre = nom
+    mission.resp_only = resp_only
+
+    try:
+        # 3. Commit asynchrone
+        await db.commit()
+        print(f"Succès : Mission {mission_id} mise à jour")
+        return RedirectResponse(url="/admin/referentiel/missions?msg=updated", status_code=303)
+    except Exception as e:
+        await db.rollback()
+        print(f"Erreur DB : {e}")
+        return RedirectResponse(url="/admin/referentiel/missions?msg=error", status_code=303)

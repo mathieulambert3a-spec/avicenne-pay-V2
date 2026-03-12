@@ -15,7 +15,6 @@ templates = Jinja2Templates(directory="app/templates")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
-
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, current_user=Depends(get_current_user_optional)):
     if current_user:

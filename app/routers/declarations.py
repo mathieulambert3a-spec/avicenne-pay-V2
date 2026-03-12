@@ -232,15 +232,29 @@ async def create_declaration(
     db.add(new_dec)
     await db.flush()  # Pour récupérer l'ID de la déclaration
 
-    # 5. AJOUT DES LIGNES (Missions)
+    # 5. AJOUT DES LIGNES (Missions) - VERSION SÉCURISÉE
     lignes_ajoutees = 0
     for key, value in form_data.items():
         if key.startswith("quantite_") and value:
             try:
                 sm_id = int(key.split("_")[1])
-                # Nettoyage du format numérique (gère virgule et point)
-                val_clean = str(value).replace(',', '.').strip()
-                quantite = float(val_clean)
+                
+                # RÉCUPÉRATION DE LA SOUS-MISSION POUR VÉRIFIER LE TYPE
+                res_sm = await db.execute(
+                    select(SousMission)
+                    .options(selectinload(SousMission.mission))
+                    .where(SousMission.id == sm_id)
+                )
+                sm = res_sm.scalar_one_or_none()
+                
+                if not sm: continue
+
+                # --- LE VERROU SÉCURITÉ ---
+                if sm.mission.resp_only:
+                    quantite = 1.0  # On force à 1 peu importe la saisie
+                else:
+                    val_clean = str(value).replace(',', '.').strip()
+                    quantite = float(val_clean)
                 
                 if quantite > 0:
                     nouvelle_ligne = LigneDeclaration(

@@ -55,23 +55,25 @@ function formatMoney(amount) {
 
 // 5. Confirmations d'actions administratives
 function confirmDelete(button) {
+    // Si c'est un bouton dans un formulaire, on récupère le formulaire
+    const form = button.closest('form');
+    
     Swal.fire({
         title: "Supprimer ?",
         text: "Attention, cette suppression est définitive",
-        icon: "warning",
+        icon: "warning", // 'warning' au lieu de 'danger'
         width: '300px',
         showCancelButton: true,
-        confirmButtonColor: "#ffca2c", // Le jaune d'Avicenne Pay
+        confirmButtonColor: "#ffca2c",
         cancelButtonColor: "#6c757d",
         confirmButtonText: "Oui, supprimer",
         cancelButtonText: "Annuler",
         customClass: {
-            confirmButton: 'text-dark fw-bold' // Pour que le texte noir ressorte sur le jaune
+            confirmButton: 'text-dark fw-bold'
         }
     }).then((result) => {
-        // .isConfirmed est vrai si l'utilisateur a cliqué sur le bouton jaune
-        if (result.isConfirmed) {
-            button.closest('form').submit();
+        if (result.isConfirmed && form) {
+            form.submit(); // On ne soumet que si l'utilisateur valide
         }
     });
 }
@@ -200,3 +202,26 @@ function exporterCSV() {
     const url = `/admin/export/csv?${params.toString()}`;
     window.location.href = url;
 }
+// Gestion de l'édition des missions parents
+document.addEventListener('DOMContentLoaded', function() {
+    const btnEditParents = document.querySelectorAll('.btn-edit-parent');
+    btnEditParents.forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation(); // Empêche l'accordéon de s'ouvrir
+
+            const mid = this.dataset.parentId;
+            const mname = this.dataset.parentName;
+            const mresp = this.dataset.isResp === 'true';
+
+            const form = document.getElementById('formEditMission');
+            if (form) {
+                form.action = `/admin/referentiel/mission/${mid}/edit`;
+                document.getElementById('editParentNameInput').value = mname;
+                document.getElementById('editFlexSwitchResp').checked = mresp;
+
+                const modal = new bootstrap.Modal(document.getElementById('modalEditMission'));
+                modal.show();
+            }
+        });
+    });
+});

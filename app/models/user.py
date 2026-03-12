@@ -1,14 +1,14 @@
 import enum
 from datetime import datetime
-from sqlalchemy import String, Boolean, DateTime, Enum as SAEnum, func, Table, Column, Integer, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.database import Base
 from typing import TYPE_CHECKING
+from sqlalchemy import String, Boolean, DateTime, Enum as SAEnum, func, Table, Column, Integer, ForeignKey, Index, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.declaration import Declaration
     from app.models.sub_mission import SousMission
-
 
 # Table de liaison pour les permissions au niveau de la SOUS-MISSION
 user_sous_mission_permissions = Table(
@@ -45,6 +45,7 @@ class Programme(str, enum.Enum):
     las1 = "LAS 1"
     las2 = "LAS 2"
 
+# --- RÉFÉRENTIEL DES MATIÈRES ---
 MATIERES = {
     "PASS": ["UE_1", "UE_2", "UE_3", "UE_4", "UE_5", "UE_6", "UE_7", "UE_8", "MMOK", "PHARMA", "Min SVE", "Min SVH", "Min SPS", "Min EEEA", "Min PHY_MECA", "Min MATH", "Min CHIMIE", "Min STAPS", "Min DROIT", "ORAUX"],
     "LAS 1": ["Physiologie", "Anatomie", "Biologie Cell", "Biochimie", "Biostats", "Biophysique","Chimie", "SSH", "Santé Publique", "ICM", "HBDV"],
@@ -54,6 +55,7 @@ MATIERES = {
 class User(Base):
     __tablename__ = "users"
 
+    # --- COLONNES ---
     id: Mapped[int] = mapped_column(primary_key=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -79,33 +81,33 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # --- CONTRAINTE D'UNICITÉ CONDITIONNELLE (1 RESP MAX) ---
+    __table_args__ = (
+       Index(
+            "uq_resp_site_programme_matiere",
+            "site", "programme", "matiere",
+            unique=True,
+            postgresql_where=(text("role = 'resp' AND is_active = true")) # On ajoute is_active = true
+        ),
+    )
+
     # --- LOGIQUE DE VÉRIFICATION ---
     @property
     def is_payment_profile_complete(self) -> bool:
-        """
-        Vérifie si les informations critiques pour le paiement sont présentes.
-        """
+        """Vérifie si les informations critiques pour le paiement sont présentes."""
         champs_obligatoires = [
-            self.nom,
-            self.prenom,
-            self.adresse,
-            self.ville,
-            self.nss_encrypted,
-            self.iban_encrypted
+            self.nom, self.prenom, self.adresse,
+            self.ville, self.nss_encrypted, self.iban_encrypted
         ]
-        # Retourne True si TOUS les champs sont remplis (non None et non vides)
         return all(val and str(val).strip() for val in champs_obligatoires)
 
     def can_submit_declaration(self) -> bool:
-        """
-        Les admins et coordos peuvent toujours soumettre.
-        Les RESP et TCP doivent avoir un profil complet.
-        """
+        """Autorise la soumission si Admin/Coordo ou si Profil complet pour RESP/TCP."""
         if self.role in [Role.admin, Role.coordo]:
             return True
         return self.is_payment_profile_complete
 
-    # RELATIONS
+    # --- RELATIONS ---
     declarations: Mapped[list["Declaration"]] = relationship("Declaration", back_populates="user")
 
     missions_autorisees: Mapped[list["SousMission"]] = relationship(

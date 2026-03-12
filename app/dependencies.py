@@ -1,5 +1,6 @@
 from typing import Optional, Union, List
 from fastapi import Request, HTTPException, Depends, status
+from fastapi.responses import RedirectResponse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -24,9 +25,11 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     user_id = get_session_user_id(request)
+    
+    # 1. Si pas de session, redirection directe
     if not user_id:
         raise HTTPException(
-            status_code=302,
+            status_code=status.HTTP_302_FOUND,
             detail="Non authentifié",
             headers={"Location": "/login"}
         )
@@ -34,10 +37,13 @@ async def get_current_user(
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     
-    if not user:
+    # 2. Si l'utilisateur n'existe plus ou est désactivé
+    if not user or not user.is_active:
+        # On ne peut pas facilement supprimer le cookie ici via une exception
+        # Le plus simple est de rediriger. Le navigateur suivra le Location.
         raise HTTPException(
-            status_code=302,
-            detail="Utilisateur introuvable",
+            status_code=status.HTTP_302_FOUND,
+            detail="Utilisateur inactif",
             headers={"Location": "/login"}
         )
     return user

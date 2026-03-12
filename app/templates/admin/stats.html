@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block content %}
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -8,67 +7,80 @@
             <i class="fas fa-print fa-sm"></i> Imprimer
         </button>
     </div>
-
-    <div class="row mb-4">  
-        <div class="col-md-4">
-            <div class="card bg-primary text-white shadow">
-                <div class="card-body">
-                    <div class="text-center mb-3">
-                        <h6 class="text-uppercase small mb-1" style="opacity: 0.8;">Dépense Totale AVICENNE</h6>
-                        <h2 class="mb-0 fw-bold">{{ "{:,.2f}".format(total_avicenne).replace(',', ' ') }} €</h2>
-                    </div>
-                    
-                    <hr style="border-top: 1px solid rgba(255,255,255,0.2);">
-                    
-                    <div class="d-flex justify-content-between align-items-center px-2">
-                        <span class="small">Lyon Est</span>
-                        <span class="fw-bold">{{ "{:,.2f}".format(total_lyon_est).replace(',', ' ') }} €</span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center px-2 mt-1">
-                        <span class="small">Lyon Sud</span>
-                        <span class="fw-bold">{{ "{:,.2f}".format(total_lyon_sud).replace(',', ' ') }} €</span>
-                    </div>
+    <div class="row mb-4 g-3 align-items-stretch">
+        <div class="col-xl-4 col-lg-4">
+            <div class="card bg-primary text-white shadow border-0 h-100">
+                <div class="card-body d-flex flex-column justify-content-center text-center py-4">
+                    <h6 class="text-uppercase small mb-2" style="opacity: 0.8; font-size: 0.75rem; letter-spacing: 1.5px;">Dépense Totale</h6>
+                    <h2 class="display-5 fw-bold mb-0">{{ "{:,.2f}".format(total_avicenne).replace(',', ' ') }} €</h2>
+                    <div class="mt-2 small" style="opacity: 0.7; font-weight: 300;">AVICENNE GROUPE</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-8">
-            <div class="card shadow border-0" style="background: linear-gradient(45deg, #1cc88a, #13855c); color: white;">
-                <div class="card-body">
-                    <h6 class="text-uppercase small mb-3 fw-bold" style="opacity: 0.8;">Volume de travail par unité</h6>
-                    <div class="d-flex flex-wrap gap-2">
-                        {% if stats_unites %}
-                            {# 1. On définit la liste des correspondances #}
-                            {% set mapping = {
-                                'heure': 'HEURE',
-                                'jour': 'JOUR (FORFAIT)',
-                                'map / support': 'CREATION SUPPORTS',
-                                'mois': 'MOIS (FORFAIT)',
-                                'pré-colle': 'REUNION PRE-COLLE (FORFAIT)',
-                                'qcm': 'CREATION QCM',
-                                'support': 'RELECTURE SUPPORT (FORFAIT)'
-                            } %}
 
-                            {% for unite, quantite in stats_unites.items()|sort %}
-                                {# 1. On nettoie le nom (on enlève 'par ' et on met en minuscule) #}
-                                {% set unite_clean = unite.lower().replace('par ', '').strip() %}
-                                
-                                <div class="bg-white rounded-3 px-3 py-2 text-center shadow-sm" style="min-width: 140px;">
-                                    <div class="text-dark small fw-bold text-uppercase" style="font-size: 0.6rem; line-height: 1.1;">
-                                        {# 2. On cherche dans le mapping avec le nom nettoyé #}
-                                        {{ mapping.get(unite_clean, unite.upper()) }}
+        <div class="col-xl-8 col-lg-8">
+            <div class="card shadow border-0 h-100">
+                <div class="card-body py-3">
+                    <div class="row h-100 align-items-center">
+                        
+                        <div class="col-md-5">
+                            <div class="px-3">
+                                <div class="d-flex justify-content-between align-items-end mb-2">
+                                    <div>
+                                        <h6 class="text-muted small fw-bold mb-1">LYON EST</h6>
+                                        <span class="h4 fw-bold text-primary mb-0">{{ "{:,.2f}".format(total_lyon_est).replace(',', ' ') }} €</span>
                                     </div>
-                                    <div class="text-success h4 mb-0 fw-bold">
-                                        {% if 'heure' in unite.lower() %}
-                                            {{ "{:,.1f}".format(quantite).replace(',', ' ') }}
-                                        {% else %}
-                                            {{ quantite | int }}
-                                        {% endif %}
+                                    <span class="badge bg-primary-subtle text-primary mb-1" style="font-size: 0.8rem;">
+                                        {{ ((total_lyon_est / total_avicenne) * 100)|round(1) if total_avicenne > 0 else 0 }}%
+                                    </span>
+                                </div>
+                                <div class="progress" style="height: 8px; background-color: #eaecf4; border-radius: 10px;">
+                                    <div class="progress-bar bg-primary" 
+                                        role="progressbar" 
+                                        style="--width-val: {{ pct_est }}%; width: var(--width-val); border-radius: 10px;">
                                     </div>
                                 </div>
-                        {% endfor %}
-                        {% else %}
-                            <div class="h5 mb-0 opacity-75">Aucune donnée</div>
-                        {% endif %}
+
+                                <div class="progress" style="height: 8px; background-color: #eaecf4; border-radius: 10px;">
+                                    <div class="progress-bar bg-success" 
+                                        role="progressbar" 
+                                        style="--width-val: {{ pct_sud }}%; width: var(--width-val); border-radius: 10px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-2 d-none d-md-flex justify-content-center">
+                            <div style="width: 1px; height: 60px; background-color: #e3e6f0;"></div>
+                        </div>
+
+                        <div class="col-md-5">
+                            <div class="px-3">
+                                <div class="d-flex justify-content-between align-items-end mb-2">
+                                    <div>
+                                        <h6 class="text-muted small fw-bold mb-1">LYON SUD</h6>
+                                        <span class="h4 fw-bold text-success mb-0">{{ "{:,.2f}".format(total_lyon_sud).replace(',', ' ') }} €</span>
+                                    </div>
+                                    <span class="badge bg-success-subtle text-success mb-1" style="font-size: 0.8rem;">
+                                        {{ ((total_lyon_sud / total_avicenne) * 100)|round(1) if total_avicenne > 0 else 0 }}%
+                                    </span>
+                                </div>
+                                <div class="progress" style="height: 8px; background-color: #eaecf4; border-radius: 10px;">
+                                    <div class="progress-bar bg-primary progress-bar-dynamic" 
+                                        role="progressbar" 
+                                        style="--pg-width: {{ pct_est }}%;">
+                                    </div>
+                                </div>
+
+                                <div class="progress" style="height: 8px; background-color: #eaecf4; border-radius: 10px;">
+                                    <div class="progress-bar bg-success progress-bar-dynamic" 
+                                        role="progressbar" 
+                                        style="--pg-width: {{ pct_sud }}%;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -91,7 +103,6 @@
                         <input type="number" name="start_annee" class="form-control px-1 text-center" value="{{ current_start_annee }}" style="max-width: 70px;">
                     </div>
                 </div>
-
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-primary">Jusqu'à</label>
                     <div class="input-group input-group-sm">
@@ -105,7 +116,6 @@
                         <input type="number" name="end_annee" class="form-control px-1 text-center" value="{{ current_end_annee }}" style="max-width: 70px;">
                     </div>
                 </div>
-
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-primary">Statut</label>
                     <select name="statut" class="form-select form-select-sm">
@@ -114,7 +124,6 @@
                         <option value="validee" {% if current_statut == 'validee' %}selected{% endif %}>Validée uniquement</option>
                     </select>
                 </div>
-
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-primary">Programme</label>
                     <select name="programme" id="filter-programme" class="form-select form-select-sm">
@@ -124,7 +133,6 @@
                         {% endfor %}
                     </select>
                 </div>
-
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-primary">Matière</label>
                     <select name="matiere" id="filter-matiere" class="form-select form-select-sm">
@@ -152,7 +160,6 @@
             </form>
         </div>
     </div>
-
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card shadow border-0">
@@ -165,77 +172,153 @@
             </div>
         </div>
     </div>
-
+    
     <div class="row">
-        <div class="col-xl-4">
-            <div class="card shadow mb-4 border-0">
-                <div class="card-header py-3 bg-white"><h6 class="m-0 font-weight-bold text-primary">Campus</h6></div>
-                <div class="card-body">
-                    <div style="height: 250px;"><canvas id="siteChart"></canvas></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-8">
-            <div class="card shadow mb-4 border-0">
+        <div class="col-12 mb-4">
+            <div class="card shadow border-0">
                 <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
-                    <h6 class="m-0 font-weight-bold text-primary">Top 10 des contributeurs</h6>
-                    <span class="badge bg-light text-muted border px-2 py-1" style="font-size: 0.7rem;">Classé par montant total</span>
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-list-ul me-2"></i>Détail des dépenses par prestation
+                    </h6>
+                    {% if current_programme or current_matiere %}
+                    <span class="badge bg-primary-subtle text-primary border-0">
+                        Filtre actif : {{ current_programme }} {{ " > " + current_matiere if current_matiere }}
+                    </span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
-                            <thead>
+                            <thead class="table-light">
                                 <tr class="text-uppercase small fw-bold text-muted">
-                                    <th class="ps-3">Collaborateur</th>
-                                    <th class="text-center">Rôle</th>
-                                    <th class="text-center">Campus</th>
-                                    <th class="text-end pe-3">Total versé</th>
+                                    <th class="ps-3" style="width: 50%;">Libellé de la Mission / Sous-Mission</th>
+                                    <th class="text-center">Tarif /Unité</th>
+                                    <th class="text-end pe-3">Montant Total (€)</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for row in stats_users %}
-                                {% set u = row[0] %}
-                                <tr>
-                                    {# 1. COLLABORATEUR #}
-                                    <td class="ps-3">
-                                        <div class="fw-bold text-dark">{{ u.prenom }} {{ u.nom }}</div>
-                                        <div class="text-muted small" style="font-size: 0.7rem;">{{ u.email }}</div>
-                                    </td>
-
-                                    {# 2. RÔLE (AVEC COULEURS) #}
-                                    <td class="text-center">
-                                        {% if u.role.value == 'admin' %}
-                                            <span class="badge rounded-pill bg-danger px-2" style="font-size: 0.65rem;">ADMIN</span>
-                                        {% elif u.role.value == 'coordo' %}
-                                            <span class="badge rounded-pill bg-info text-dark px-2" style="font-size: 0.65rem;">COORDO</span>
-                                        {% elif u.role.value == 'resp' %}
-                                            <span class="badge rounded-pill bg-primary px-2" style="font-size: 0.65rem;">RESP</span>
-                                        {% elif u.role.value == 'tcp' %}
-                                            <span class="badge rounded-pill bg-success px-2" style="font-size: 0.65rem;">TCP</span>
-                                        {% else %}
-                                            <span class="badge rounded-pill bg-light text-dark border px-2" style="font-size: 0.65rem;">{{ u.role.value | upper if u.role else '-' }}</span>
-                                        {% endif %}
-                                    </td>
-
-                                    {# 3. CAMPUS #}
-                                    <td class="text-center">
-                                        <span class="badge {% if u.site and u.site.value == 'Lyon Est' %}bg-primary-subtle text-primary{% else %}bg-success-subtle text-success{% endif %} border-0 px-2" style="font-size: 0.75rem;">
-                                            {{ u.site.value if u.site else '-' }}
-                                        </span>
-                                    </td>
-
-                                    {# 4. TOTAL #}
-                                    <td class="text-end pe-3">
-                                        <span class="fw-bold text-primary">{{ "{:,.2f}".format(row[1]).replace(',', ' ') }} €</span>
+                                {% if stats_unites %}
+                                    {% for titre, data in stats_unites.items() %}
+                                    <tr>
+                                        <td class="ps-3">
+                                            {% if " | " in titre %}
+                                                {% set parts = titre.split(" | ") %}
+                                                <div class="small text-muted text-uppercase" style="font-size: 0.7rem;">{{ parts[0] }}</div>
+                                                <div class="fw-bold text-dark">{{ parts[1] }}</div>
+                                            {% else %}
+                                                <div class="fw-bold text-dark">{{ titre }}</div>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge bg-light text-dark border px-3 py-2">
+                                                {% if data is mapping and data.val and data.val > 0 %}
+                                                    {# On récupère le coût total avec la clé 'titre' #}
+                                                    {% set total_ligne = stats_couts.get(titre, 0) %}
+                                                    {% set prix_unitaire = (total_ligne / data.val) | round(1) %}
+                                                    
+                                                    {# %g retire le .0 si le chiffre est rond #}
+                                                    {{ "%g" | format(prix_unitaire) }} € / {{ data.unit }}
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </span>
+                                        </td>
+                                        <td class="text-end pe-3">
+                                            <span class="fw-bold text-primary" style="font-size: 1rem;">
+                                                {{ "{:,.2f}".format(stats_couts.get(titre, 0) or 0).replace(',', ' ') }} €
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    {# ... bloc "Aucune donnée trouvée" ... #}
+                                {% endif %}
+                            </tbody>
+                            {% if total_avicenne > 0 %}
+                            <tfoot class="table-group-divider">
+                                <tr class="table-light fw-bold">
+                                    <td class="ps-3 text-uppercase">Total pour la sélection</td>
+                                    <td class="text-center">-</td>
+                                    <td class="text-end pe-3 text-primary" style="font-size: 1.2rem;">
+                                        {{ "{:,.2f}".format(total_avicenne).replace(',', ' ') }} €
                                     </td>
                                 </tr>
-                                {% endfor %}
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+   <div class="row">
+        <div class="col-xl-8">
+            <div class="card shadow mb-4 border-0">
+                <div class="card-header py-3 bg-white d-flex justify-c  ontent-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Top 10 des contributeurs</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr class="text-uppercase small fw-bold text-muted">
+                                    <th class="ps-3">Intervenant & Infos</th>
+                                    <th class="text-center">Parcours</th>
+                                    <th class="text-end pe-3">Montant Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if stats_users %}
+                                    {% for u in stats_users %}
+                                    <tr>
+                                        <td class="ps-3">
+                                            <div class="d-flex align-items-center">
+                                                <div class="avatar-circle">
+                                                    {{ u.user.nom[0]|upper if u.user.nom else '?' }}{{ u.user.prenom[0]|upper if u.user.prenom else '' }}
+                                                </div>
+                                                <div class="ms-3">
+                                                    <div class="fw-bold text-dark">{{ u.user.nom }} {{ u.user.prenom }}</div>
+                                                    <span class="badge rounded-pill bg-info text-white" style="font-size: 0.65rem;">
+                                                        {# On utilise role_display déjà traité dans admin.py #}
+                                                        {{ u.role_display }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            {% if u.user.programme %}
+                                                <span class="badge {{ 'bg-soft-danger text-danger' if u.user.programme.value == 'PASS' else 'bg-soft-warning text-dark' }} border">
+                                                    {{ u.user.programme.value }}
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-light text-muted border">N/A</span>
+                                            {% endif %}
+                                            <br>
+                                            <small class="text-muted"><i class="fas fa-book-open me-1"></i>{{ u.user.matiere or 'Non renseignée' }}</small>
+                                        </td>
+                                        <td class="text-end pe-3">
+                                            <span class="fw-bold text-primary" style="font-size: 1.1rem;">
+                                                {{ "{:,.2f}".format(u.total_brut or 0).replace(',', ' ') }} €
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}    
+                                {% else %}
+                                    <tr>
+                                        <td colspan="3" class="text-center py-5">
+                                            <i class="fas fa-user-slash fa-2x text-light mb-3 d-block"></i>
+                                            <span class="text-muted">Aucun contributeur trouvé.</span>
+                                        </td>
+                                    </tr>
+                                {% endif %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 </div>
 
 <div id="stats-data" 

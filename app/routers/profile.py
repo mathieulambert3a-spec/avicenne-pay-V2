@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from cryptography.fernet import Fernet, InvalidToken
@@ -77,7 +77,7 @@ async def update_profile(
 ):
     f = get_fernet()
     
-    # --- Mise à jour des informations de base ---
+    # --- 1. Mise à jour des informations de base (Libre) ---
     current_user.nom = nom or current_user.nom
     current_user.prenom = prenom or current_user.prenom
     current_user.adresse = adresse or current_user.adresse
@@ -85,40 +85,45 @@ async def update_profile(
     current_user.ville = ville or current_user.ville
     current_user.telephone = telephone or current_user.telephone
 
-    # --- Données sensibles (on ne touche que si fourni) ---
+    # --- 2. Données sensibles (on ne touche que si fourni) ---
     if nss:
         current_user.nss_encrypted = encrypt(nss, f)
     if iban:
         current_user.iban_encrypted = encrypt(iban, f)
 
-    # --- Affectations Académiques ---
-    if site:
-        current_user.site = Site(site)
-    
-    if programme:
-        current_user.programme = Programme(programme)
-        current_user.matiere = matiere or None
-    
+    # --- 3. Affectations Académiques (SÉCURISÉES) ---
+    # Seuls Admin et Coordo peuvent modifier Site, Programme et Matière
+    if current_user.role.value in ['admin', 'coordo']:
+        if site:
+            current_user.site = Site(site)
+        if programme:
+            current_user.programme = Programme(programme)
+            current_user.matiere = matiere or None
+    else:
+        # Optionnel : loguer une tentative de modification non autorisée ici
+        pass
+
+    # --- 4. Autres infos académiques (Libres pour RESP/TCP) ---
     if filiere:
         current_user.filiere = Filiere(filiere)
     if annee:
         current_user.annee = Annee(annee)
 
-    # --- Statut de complétude ---
+    # --- 5. Statut de complétude ---
     success_msg = "Profil mis à jour avec succès."
     
     if profil_complete == "on":
-        # 1. Champs obligatoires pour TOUT LE MONDE (Coordo, Resp, TCP)
+        # Champs obligatoires pour TOUT LE MONDE
         champs_communs = [current_user.nom, current_user.prenom, current_user.ville]
         base_ok = all(val and str(val).strip() for val in champs_communs)
 
-        # 2. Champs spécifiques au PAIEMENT (Uniquement pour Resp et TCP)
+        # Champs spécifiques au PAIEMENT (Uniquement pour Resp et TCP)
         paiement_ok = True
         if current_user.role.value in ['resp', 'tcp']:
             champs_paiement = [current_user.nss_encrypted, current_user.iban_encrypted]
             paiement_ok = all(val and str(val).strip() for val in champs_paiement)
 
-        # 3. Validation finale
+        # Validation finale
         if base_ok and paiement_ok:
             current_user.profil_complete = True
             success_msg = "Profil validé et finalisé !"
@@ -129,13 +134,15 @@ async def update_profile(
             else:
                 success_msg = "Profil sauvegardé, mais incomplet : veuillez remplir les champs d'identité obligatoires."
     else:
-        current_user.profil_complete = False
-        success_msg = "Modifications enregistrées en brouillon."
+        # Si on ne coche pas la case de finalisation, on garde le statut actuel 
+        # ou on repasse en False si vous voulez forcer une nouvelle validation
+        current_user.profil_complete = current_user.profil_complete 
+        success_msg = "Modifications enregistrées."
 
     await db.commit()
     await db.refresh(current_user)
 
-    # Préparation de l'affichage pour le retour
+    # Préparation de l'affichage
     nss_display = decrypt(current_user.nss_encrypted or "", f)
     iban_display = decrypt(current_user.iban_encrypted or "", f)
 

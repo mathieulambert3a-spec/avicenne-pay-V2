@@ -15,27 +15,45 @@ from app.schemas.constants import MISSIONS_INITIALES
 
 async def main():
     async with AsyncSessionLocal() as db:
-        # Missions existantes indexées par titre
         res = await db.execute(select(Mission))
         existing_missions = {m.titre: m for m in res.scalars().all()}
 
         created_m = updated_m = created_sm = updated_sm = 0
 
         for mission_titre, sous_missions in MISSIONS_INITIALES.items():
+            # --- DÉTECTION DU FLAG RESP_ONLY ---
+            # On regarde si au moins une sous-mission dans les constantes a "is_resp": True
+            is_resp_only = any(sm_def.get("is_resp", False) for sm_def in sous_missions)
+            
             mission = existing_missions.get(mission_titre)
 
             if mission is None:
-                mission = Mission(titre=mission_titre, ordre=0, is_active=True)
+                # Ajout de resp_only à la création
+                mission = Mission(
+                    titre=mission_titre, 
+                    ordre=0, 
+                    is_active=True, 
+                    resp_only=is_resp_only
+                )
                 db.add(mission)
-                await db.flush()  # mission.id dispo
+                await db.flush()
                 existing_missions[mission_titre] = mission
                 created_m += 1
             else:
+                # Mise à jour si le flag a changé ou si la mission était inactive
+                changed_m = False
+                if mission.resp_only != is_resp_only:
+                    mission.resp_only = is_resp_only
+                    changed_m = True
+                
                 if not mission.is_active:
                     mission.is_active = True
+                    changed_m = True
+                
+                if changed_m:
                     updated_m += 1
 
-            # IMPORTANT: requête explicite des sous-missions (pas de mission.sous_missions)
+            # --- GESTION DES SOUS-MISSIONS ---
             res_sms = await db.execute(
                 select(SousMission).where(SousMission.mission_id == mission.id)
             )
@@ -73,6 +91,7 @@ async def main():
                     if not sm.is_active:
                         sm.is_active = True
                         changed = True
+                    
                     if changed:
                         updated_sm += 1
 

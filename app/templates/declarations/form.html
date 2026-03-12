@@ -75,90 +75,84 @@
 
         {# --- LISTE DES MISSIONS --- #}
         {% for mission in missions %}
-        {# Si la mission est réservée aux RESP, on vérifie que l'utilisateur est bien un RESP #}
-        {% if mission.resp_only %}
-            {% if user.role.value == 'RESP' %}
-                {# BLOC AFFICHAGE MISSION RESP #}
-                <div class="card mb-4 border-0 shadow-sm overflow-hidden">
-                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
-                        <span class="fw-bold"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>{{ mission.titre }}</span>
-                        <span class="badge bg-warning text-dark px-3 rounded-pill border border-dark small">Forfait Responsable</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                            <tbody>
-                                {% for sm in mission.sous_missions if sm.is_active %}
-                                <tr>
-                                    <td class="ps-4">
-                                        <div class="fw-bold text-dark">{{ sm.titre }}</div>
-                                        <div class="text-muted small">Forfait mensuel fixe</div>
-                                    </td>
-                                    <td><span class="text-dark fw-medium">{{ "%.2f"|format(sm.tarif) }} €</span></td>
-                                    <td>
-                                        {# VALEUR FIXÉE ET VERROUILLÉE #}
-                                        <input type="hidden" name="quantite_{{ sm.id }}" value="1">
-                                        <input type="hidden" class="quantite-input" data-tarif="{{ sm.tarif }}" data-smid="{{ sm.id }}" value="1">
-                                        <div class="badge bg-success-subtle text-success border border-success px-3 py-2 w-100 text-center">
-                                            <i class="bi bi-check-circle-fill me-1"></i> Forfait appliqué (1)
-                                        </div>
-                                    </td>
-                                    <td class="text-end pe-4 fw-bold">
-                                        <span class="montant-cell text-success" id="montant_{{ sm.id }}">{{ "%.2f"|format(sm.tarif) }} €</span>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            {% endif %}
-        {% else %}
-            {# MISSIONS NORMALES (Accessibles à tout le monde : TCP et RESP) #}
             {% set active_sms = mission.sous_missions | selectattr('is_active') | list %}
+            
             {% if active_sms %}
-                <div class="card mb-4 border-0 shadow-sm overflow-hidden">
-                    <div class="card-header bg-light border-bottom d-flex justify-content-between align-items-center py-3">
-                        <span class="fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-primary"></i>{{ mission.titre }}</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                            <thead class="table-light">
-                                <tr class="small text-muted text-uppercase">
-                                    <th class="ps-4 py-3">Détail</th>
-                                    <th style="width:160px">Tarif</th>
-                                    <th style="width:220px">Quantité</th>
-                                    <th style="width:160px" class="text-end pe-4">Montant</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sm in active_sms | sort(attribute='ordre') %}
-                                <tr>
-                                    <td class="ps-4">
-                                        <div class="fw-bold text-dark">{{ sm.titre }}</div>
-                                        <div class="text-muted small">{{ sm.code_sage or '' }}</div>
-                                    </td>
-                                    <td>{{ "%.2f"|format(sm.tarif) }} €</td>
-                                    <td>
-                                        <div class="input-group shadow-sm">
-                                            <input type="text" name="quantite_{{ sm.id }}"
+                {# --- LOGIQUE DE DÉTECTION DU RÔLE --- #}
+                {# On convertit le rôle en chaîne et en minuscule pour être sûr #}
+                {% set user_role_raw = user.role | string | lower %}
+                {% set is_resp = 'resp' in user_role_raw %}
+
+                {% if mission.resp_only %}
+                    {# --- BLOC RÉSERVÉ AUX RESPONSABLES --- #}
+                    {% if is_resp %}
+                        <div class="card mb-4 border-0 shadow-sm overflow-hidden border-start border-4 border-warning">
+                            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
+                                <span class="fw-bold"><i class="bi bi-shield-lock-fill me-2 text-warning"></i>{{ mission.titre }}</span>
+                                <span class="badge bg-warning text-dark px-3 rounded-pill small">Forfait Responsable</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 align-middle">
+                                    <tbody>
+                                        {% for sm in active_sms | sort(attribute='ordre') %}
+                                        <tr>
+                                            <td class="ps-4">
+                                                <div class="fw-bold text-dark">{{ sm.titre }}</div>
+                                                <div class="text-muted small">{{ sm.code_sage or '' }}</div>
+                                            </td>
+                                            <td style="width:160px">{{ "%.2f"|format(sm.tarif) }} €</td>
+                                            <td style="width:220px">
+                                                {# Input caché pour envoyer 1 au serveur #}
+                                                <input type="hidden" name="quantite_{{ sm.id }}" value="1">
+                                                <div class="input-group shadow-sm">
+                                                    <input type="text" class="form-control text-center fw-bold bg-light text-muted" value="1" disabled>
+                                                    <span class="input-group-text bg-light small" style="min-width: 80px;">
+                                                        <i class="bi bi-lock-fill text-warning"></i>
+                                                    </td>
+                                                <td class="text-end pe-4 fw-bold" style="width:160px">
+                                                    <span class="text-primary">{{ "%.2f"|format(sm.tarif) }} €</span>
+                                                </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                {% else %}
+                    {# --- BLOC MISSION NORMALE --- #}
+                    <div class="card mb-4 border-0 shadow-sm overflow-hidden">
+                        <div class="card-header bg-light border-bottom py-3">
+                            <span class="fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-primary"></i>{{ mission.titre }}</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 align-middle">
+                                <tbody>
+                                    {% for sm in active_sms | sort(attribute='ordre') %}
+                                    <tr>
+                                        <td class="ps-4">
+                                            <div class="fw-bold text-dark">{{ sm.titre }}</div>
+                                        </td>
+                                        <td style="width:160px">{{ "%.2f"|format(sm.tarif) }} €</td>
+                                        <td style="width:220px">
+                                            <input type="number" name="quantite_{{ sm.id }}" 
                                                 class="form-control quantite-input text-center fw-bold border-primary-subtle"
                                                 data-tarif="{{ sm.tarif }}" data-smid="{{ sm.id }}"
-                                                inputmode="decimal" value="{{ lignes_map.get(sm.id, '') }}" placeholder="0">
-                                            <span class="input-group-text bg-light small" style="min-width: 80px;">{{ sm.unite or 'ut' }}</span>
-                                        </div>
-                                    </td>
-                                    <td class="text-end pe-4 fw-bold">
-                                        <span class="montant-cell text-primary" id="montant_{{ sm.id }}">0,00 €</span>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                                step="0.1" min="0" value="{{ lignes_map.get(sm.id, '') }}" placeholder="0">
+                                        </td>
+                                        <td class="text-end pe-4 fw-bold" style="width:160px">
+                                            <span class="montant-cell text-primary" id="montant_{{ sm.id }}">0,00 €</span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
+                {% endif %}
             {% endif %}
-        {% endif %}
-    {% endfor %}
+        {% endfor %}
 
         {# --- BARRE D'ACTIONS FIXE AU BAS --- #}
         <div class="sticky-bottom-container">
@@ -236,43 +230,70 @@ const formatter = new Intl.NumberFormat('fr-FR', {
 function recalculate() {
     let totalGlobal = 0;
     
-    document.querySelectorAll('.quantite-input').forEach(input => {
+    // On cible TOUS les inputs qui ont un data-tarif (qu'ils soient normaux, readonly ou disabled)
+    document.querySelectorAll('input[data-tarif]').forEach(input => {
         const tarif = parseFloat(input.dataset.tarif) || 0;
-        // Gestion flexible point/virgule
-        const qtyValue = input.value.toString().replace(',', '.');
-        const qty = parseFloat(qtyValue) || 0;
         const smId = input.dataset.smid;
+        
+        let qty;
+        
+        // --- LOGIQUE DE FORFAIT ---
+        // Si le champ est readonly ou disabled, c'est un forfait RESP : on force à 1
+        if (input.hasAttribute('readonly') || input.hasAttribute('disabled')) {
+            qty = 1.0;
+            // On s'assure que l'affichage visuel reste à 1
+            if (input.value !== "1") {
+                input.value = 1;
+            }
+        } else {
+            // Sinon, saisie libre (on remplace la virgule par un point pour le calcul)
+            const qtyValue = input.value.toString().replace(',', '.');
+            qty = parseFloat(qtyValue) || 0;
+        }
         
         const montantLigne = tarif * qty;
         totalGlobal += montantLigne;
         
+        // Mise à jour de la cellule de montant pour la ligne
         const cell = document.getElementById('montant_' + smId);
         if (cell) {
             cell.textContent = formatter.format(montantLigne);
+            
+            // Petit bonus visuel : vert si rempli, gris si vide
             if (montantLigne > 0) {
-                cell.classList.remove('text-primary');
-                cell.classList.add('text-success');
+                cell.classList.replace('text-primary', 'text-success');
             } else {
-                cell.classList.remove('text-success');
-                cell.classList.add('text-primary');
+                cell.classList.replace('text-success', 'text-primary');
             }
         }
     });
     
+    // Mise à jour des totaux (Haut et Bas)
     const totalDisplay = formatter.format(totalGlobal);
-    document.getElementById('totalAmount').textContent = totalDisplay;
-    document.getElementById('totalAmountBottom').textContent = totalDisplay;
+    const topTotal = document.getElementById('totalAmount');
+    const bottomTotal = document.getElementById('totalAmountBottom');
+    
+    if (topTotal) topTotal.textContent = totalDisplay;
+    if (bottomTotal) bottomTotal.textContent = totalDisplay;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const inputs = document.querySelectorAll('.quantite-input');
-    
-    inputs.forEach(input => {
-        input.addEventListener('input', recalculate);
-        input.addEventListener('change', recalculate);
-        input.addEventListener('click', function() { this.select(); });
+    // On écoute les changements sur tous les inputs de quantité
+    // On utilise la délégation d'événement pour être plus robuste
+    document.addEventListener('input', function(e) {
+        if (e.target.classList.contains('quantite-input')) {
+            recalculate();
+        }
+    });
+
+    // Sélection automatique du texte au clic pour faciliter la saisie
+    document.querySelectorAll('.quantite-input').forEach(input => {
+        input.addEventListener('click', function() { 
+            if (!this.readOnly) this.select(); 
+        });
     });
     
+    // Lancement initial au chargement de la page
     recalculate();
 });
 </script>

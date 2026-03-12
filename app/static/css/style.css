@@ -132,3 +132,81 @@ footer {
 .hover-primary:active {
     opacity: 0.7;
 }
+/* Style pour le référentiel missions */
+.accordion-header .d-flex {
+    width: 100%;
+}
+
+.btn-edit-parent, .btn-outline-success, .btn-outline-secondary {
+    position: relative;
+    z-index: 10; /* Pour passer au-dessus du clic de l'accordéon */
+}
+
+/* On donne un peu d'air au titre pour ne pas qu'il touche les boutons sur mobile */
+.accordion-button {
+    padding-right: 120px !important; 
+}
+
+/* Le jaune Avicenne pour tes boutons si tu veux l'harmoniser */
+.btn-avicenne {
+    background-color: #ffca2c;
+    border-color: #ffca2c;
+    color: #000;
+    font-weight: bold;
+}
+/* Barre de progression dynamique pour les stats */
+.progress-bar-dynamic {
+    width: var(--pg-width, 0%);
+    border-radius: 10px;
+    transition: width 0.6s ease; /* Petit effet fluide au chargement */
+}
+
+/* On prépare aussi des variantes de couleurs subtiles si besoin */
+.bg-primary-subtle {
+    background-color: rgba(13, 110, 253, 0.1) !important;
+}
+
+.bg-success-subtle {
+    background-color: rgba(25, 135, 84, 0.1) !important;
+}
+/* Variables de couleurs personnalisées pour Avicenne */
+:root {
+    --primary-color: #0d6efd;
+    --bg-light: #f8f9fa;
+    --danger-color: #dc3545;
+    --info-soft: #eef2ff; /* Pour les fonds de badges ou avatars */
+}
+
+body {
+    background-color: var(--bg-light);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* --- ÉLÉMENTS DE TABLEAUX DE STATS (TOP 10) --- */
+
+/* Avatar circulaire avec initiales */
+.avatar-circle {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background-color: var(--info-soft);
+    color: var(--primary-color);
+    border: 1px solid #e3e6f0;
+}
+
+/* Badges de rôles et programmes */
+.badge-pill-role {
+    font-size: 0.65rem;
+    padding: 0.35em 0.8em;
+    border-radius: 50rem;
+}
+
+/* Utilitaires de couleurs soft */
+.bg-soft-primary { background-color: var(--info-soft); }
+.bg-soft-danger { background-color: rgba(220, 53, 69, 0.1); }
+.bg-soft-warning { background-color: rgba(255, 193, 7, 0.1); }

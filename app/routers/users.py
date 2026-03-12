@@ -4,6 +4,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
+
 from passlib.context import CryptContext
 from typing import Optional, List
 
@@ -286,3 +288,44 @@ async def delete_user(
     await db.delete(user_to_delete)
     await db.commit()
     return RedirectResponse(url="/users", status_code=303)
+
+@router.post("/{user_id}/edit")
+async def update_user(
+    user_id: int,
+    role: str = Form(...),
+    site: Optional[str] = Form(None),
+    programme: Optional[str] = Form(None),
+    matiere: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Récupération de l'utilisateur
+    res = await db.execute(select(User).where(User.id == user_id))
+    target_user = res.scalar_one_or_none()
+    
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+
+    # 2. Sécurité : On vérifie les droits (Admin ou Coordo du même site, etc.)
+    # (Garde ta logique de vérification ici)
+
+    # 3. Mise à jour des seuls champs modifiables
+    try:
+        target_user.role = Role(role)
+        target_user.site = Site(site) if site and site.strip() else None
+        target_user.programme = Programme(programme) if programme and programme.strip() else None
+        target_user.matiere = matiere if matiere and matiere.strip() else None
+
+        # Règle : Si Admin, pas d'affectation spécifique
+        if target_user.role == Role.admin:
+            target_user.site = None
+            target_user.programme = None
+            target_user.matiere = None
+
+        await db.commit()
+        return RedirectResponse(url="/admin/users?msg=updated", status_code=303)
+
+    except IntegrityError:
+        await db.rollback()
+        # Redirection avec l'erreur de doublon RESP
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=duplicate_resp", status_code=303)

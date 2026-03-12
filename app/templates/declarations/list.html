@@ -122,105 +122,156 @@
                     <tr class="text-uppercase x-small fw-bold text-muted">
                         <th class="ps-4 py-3 sortable" onclick="sortTable(0)" style="cursor: pointer;">
                             Collaborateur <i class="bi bi-arrow-down-up ms-1 small"></i>
-                        </th>
                         <th class="sortable" onclick="sortTable(1)" style="cursor: pointer;">
-                            Période <i class="bi bi-arrow-down-up ms-1 small"></i>
+                            Programme <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
                         <th class="sortable" onclick="sortTable(2)" style="cursor: pointer;">
-                            Site & Prog. <i class="bi bi-arrow-down-up ms-1 small"></i>
+                            Rôle <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
-                        <th class="text-center sortable" onclick="sortTable(3)" style="cursor: pointer;">
-                            Statut <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        <th class="sortable" onclick="sortTable(3)" style="cursor: pointer;">
+                            Période <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
                         <th class="sortable" onclick="sortTable(4)" style="cursor: pointer;">
+                            Site & Prog. <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="text-center sortable" onclick="sortTable(5)" style="cursor: pointer;">
+                            Statut <i class="bi bi-arrow-down-up ms-1 small"></i>
+                        </th>
+                        <th class="sortable" onclick="sortTable(6)" style="cursor: pointer;">
                             Soumise <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for decl in declarations %}
-                    {% set status_val = decl.statut.value %}
-                    <tr class="status-border-{{ 'brouillon' if status_val == 'brouillon' else 'validee' if status_val == 'validee' else 'soumise' }}">
-                        <td class="ps-4">
+            <tbody>
+                {% for decl in declarations %}
+                {% set status_val = decl.statut.value %}
+                <tr class="status-border-{{ 'brouillon' if status_val == 'brouillon' else 'validee' if status_val == 'validee' else 'soumise' }}">
+                    
+                    {# 1. COLLABORATEUR (Position 1) #}
+                    <td class="ps-4">
+                        {% if user.role.value in ['admin', 'coordo'] %}
+                            <a href="/users/{{ decl.user.id }}" class="text-decoration-none" title="Voir le profil de {{ decl.user.prenom }}">
+                                <div class="fw-bold text-dark mb-0 hover-primary">{{ decl.user.prenom }} {{ decl.user.nom }}</div>
+                            </a>
+                        {% else %}
                             <div class="fw-bold text-dark mb-0">{{ decl.user.prenom }} {{ decl.user.nom }}</div>
-                            <div class="text-primary x-small fw-bold">
-                                <i class="bi bi-journal-text me-1"></i>{{ decl.user.matiere or 'Sans matière' }}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="fw-bold">{{ mois_labels[decl.mois] }}</div>
-                            <div class="text-muted x-small">{{ decl.annee }}</div>
-                        </td>
-                        <td>
-                            <div class="small fw-medium">
-                                <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ decl.site.value if decl.site else 'Non défini' }}
-                            </div>
-                            <div class="x-small text-muted">{{ decl.programme.value if decl.programme else '' }}</div>
-                        </td>
-                        <td class="text-center">
-                            {% if status_val == 'brouillon' %}
-                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3">
-                                    <i class="bi bi-pencil-fill me-1"></i> Brouillon
-                                </span>
-                                {% if decl.commentaire_admin %}
-                                    <div class="x-small text-danger mt-1" title="{{ decl.commentaire_admin }}">
-                                        <i class="bi bi-exclamation-triangle"></i> Rejetée
-                                    </div>
-                                {% endif %}
-                            {% elif status_val == 'validee' %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">
-                                    <i class="bi bi-check-circle-fill me-1"></i> Validée
-                                </span>
-                            {% else %}
-                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3">
-                                    <i class="bi bi-send-fill me-1"></i> Soumise
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td class="text-muted small">
-                            {{ decl.soumise_le.strftime('%d/%m/%Y') if decl.soumise_le else '–' }}
-                        </td>
-                        <td class="text-end pe-4">
-                            <div class="btn-group btn-group-sm shadow-sm">
-                                <a href="/declarations/{{ decl.id }}" class="btn btn-white" title="Voir">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                                
-                                {# Actions rapides pour Admin/Coordo #}
-                                {% if status_val == 'soumise' and user.role.value in ['admin', 'coordo'] %}
-                                <form action="/declarations/{{ decl.id }}/valider" method="post" class="d-inline">
-                                    <button type="submit" class="btn btn-white text-success" title="Valider">
-                                        <i class="bi bi-check-lg"></i>
-                                    </button>
-                                </form>
-                                <button type="button" 
-                                        class="btn btn-white text-warning" 
-                                        title="Rejeter" 
-                                        onclick="rejeterDeclaration('{{ decl.id }}')">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                </button>
-                                {% endif %}
+                        {% endif %}
+                        
+                        <div class="text-primary x-small fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>{{ decl.user.matiere or 'Sans matière' }}
+                        </div>
+                    </td>
 
-                                {# Édition / Suppression #}
-                                {% if status_val == 'brouillon' and (decl.user_id == user.id or user.role.value == 'admin') %}
-                                <a href="/declarations/{{ decl.id }}/edit" class="btn btn-white text-primary">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                {% endif %}
-                                
-                                {% if user.role.value == 'admin' %}
-                                <form action="/declarations/{{ decl.id }}/delete" method="post" class="d-inline" onclick="return confirmDelete(this)">
-                                    <button type="submit" class="btn btn-white text-danger">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </form>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                    {# 2. PROGRAMME (Nouvelle Position 2) #}
+                    <td>
+                        {% if decl.user and decl.user.programme %}
+                            {% set prog_val = decl.user.programme.value if decl.user.programme.value is defined else decl.user.programme %}
+                            <span class="badge bg-white text-dark border shadow-sm px-2" style="font-size: 0.75rem;">
+                                <i class="bi bi-layers text-muted me-1"></i>{{ prog_val }}
+                            </span>
+                        {% else %}
+                            <span class="text-muted small">-</span>
+                        {% endif %}
+                    </td>
+
+                    {# 3. RÔLE (Position 3) #}
+                    <td>
+                        {% if decl.user and decl.user.role %}
+                            {% set r_val = decl.user.role.value if decl.user.role.value is defined else decl.user.role %}
+                            {% if r_val == 'admin' %}
+                                <span class="badge rounded-pill bg-danger shadow-sm px-3">ADMIN</span>
+                            {% elif r_val == 'coordo' %}
+                                <span class="badge rounded-pill bg-primary shadow-sm px-3">COORDO</span>
+                            {% elif r_val == 'resp' %}
+                                <span class="badge rounded-pill bg-warning text-dark shadow-sm px-3">RESP</span>
+                            {% elif r_val == 'tcp' %}
+                                <span class="badge rounded-pill bg-info text-dark shadow-sm px-3">TCP</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border px-3">{{ r_val }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-light text-muted border px-3">N/A</span>
+                        {% endif %}
+                    </td>
+
+                    {# 4. PÉRIODE (Mois / Année) #}
+                    <td>
+                        <div class="fw-bold">{{ mois_labels[decl.mois] }}</div>
+                        <div class="text-muted x-small">{{ decl.annee }}</div>
+                    </td>
+
+                    {# 5. SITE #}
+                    <td>
+                        <div class="small fw-medium">
+                            <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ decl.site.value if decl.site else 'Non défini' }}
+                        </div>
+                    </td>
+
+                    {# 6. STATUT #}
+                    <td class="text-center">
+                        {% if status_val == 'brouillon' %}
+                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3">
+                                <i class="bi bi-pencil-fill me-1"></i> Brouillon
+                            </span>
+                            {% if decl.commentaire_admin %}
+                                <div class="x-small text-danger mt-1" title="{{ decl.commentaire_admin }}">
+                                    <i class="bi bi-exclamation-triangle"></i> Rejetée
+                                </div>
+                            {% endif %}
+                        {% elif status_val == 'validee' %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">
+                                <i class="bi bi-check-circle-fill me-1"></i> Validée
+                            </span>
+                        {% else %}
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3">
+                                <i class="bi bi-send-fill me-1"></i> Soumise
+                            </span>
+                        {% endif %}
+                    </td>
+
+                    {# 7. DATE SOUMISSION #}
+                    <td class="text-muted small">
+                        {{ decl.soumise_le.strftime('%d/%m/%Y') if decl.soumise_le else '–' }}
+                    </td>
+
+                    {# 8. ACTIONS #}
+                    <td class="text-end pe-4">
+                        <div class="btn-group btn-group-sm shadow-sm">
+                            <a href="/declarations/{{ decl.id }}" class="btn btn-white" title="Consulter">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            
+                            {% if status_val == 'brouillon' and decl.user_id == user.id %}
+                            <a href="/declarations/{{ decl.id }}/edit" class="btn btn-white text-primary" title="Modifier mon brouillon">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            {% endif %}
+
+                            {% if status_val == 'soumise' and user.role.value in ['admin', 'coordo'] and decl.user_id != user.id %}
+                            <form action="/declarations/{{ decl.id }}/valider" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-white text-success" title="Valider">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-white text-warning" title="Rejeter" onclick="rejeterDeclaration('{{ decl.id }}')">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            {% endif %}
+
+                            {% if user.role.value == 'admin' %}
+                            <form action="/declarations/{{ decl.id }}/delete" method="post" class="d-inline" 
+                                onsubmit="event.preventDefault(); confirmDelete(this.querySelector('button'))">
+                                <button type="submit" class="btn btn-white text-danger" title="Supprimer (Admin)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
             </table>
         </div>
     </div>
@@ -228,22 +279,6 @@
 </div>
 
 <script>
-function confirmDelete(form) {
-    Swal.fire({
-        title: 'Supprimer ?',
-        text: "Cette action est irréversible.",
-        icon: 'danger',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Oui, supprimer'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            form.submit();
-        }
-    });
-    return false;
-}
 
 function rejeterDeclaration(id) {
     Swal.fire({
@@ -284,62 +319,68 @@ function rejeterDeclaration(id) {
 }
 
 function sortTable(n) {
-    var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-    table = document.querySelector(".table");
-    switching = true;
-    dir = "asc";
+    const table = document.querySelector(".table");
+    const tbody = table.querySelector("tbody");
+    // 1. On récupère les lignes
+    const rows = Array.from(tbody.rows);
     
-    while (switching) {
-        switching = false;
-        rows = table.rows;
-        
-        for (i = 1; i < (rows.length - 1); i++) {
-            shouldSwitch = false;
-            x = rows[i].getElementsByTagName("TD")[n];
-            y = rows[i + 1].getElementsByTagName("TD")[n];
-            
-            let xText = x.innerText.trim().toLowerCase();
-            let yText = y.innerText.trim().toLowerCase();
+    // 2. On détermine la direction (toggle)
+    // On stocke la direction actuelle sur l'élément pour savoir s'il faut inverser
+    const currentDir = table.getAttribute("data-sort-dir") === "asc" && table.getAttribute("data-sort-col") == n ? "desc" : "asc";
+    
+    // 3. On trie le tableau de lignes en mémoire
+    rows.sort((a, b) => {
+        const xValue = getVal(a.getElementsByTagName("TD")[n], n);
+        const yValue = getVal(b.getElementsByTagName("TD")[n], n);
 
-            if (n === 3) { 
-                xText = x.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
-                yText = y.querySelector('.badge')?.innerText.trim().toLowerCase() || "";
-            } 
-            else if (n === 4) { 
-                const parseDate = (txt) => {
-                    const p = txt.split('/');
-                    return p.length === 3 ? p[2] + p[1] + p[0] : "00000000";
-                };
-                xText = parseDate(xText);
-                yText = parseDate(yText);
-            }
+        if (xValue < yValue) return currentDir === "asc" ? -1 : 1;
+        if (xValue > yValue) return currentDir === "asc" ? 1 : -1;
+        return 0;
+    });
 
-            if (dir == "asc") {
-                if (xText > yText) { shouldSwitch = true; break; }
-            } else if (dir == "desc") {
-                if (xText < yText) { shouldSwitch = true; break; }
-            }
-        }
-        
-        if (shouldSwitch) {
-            rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-            switching = true;
-            switchcount++;
-        } else {
-            if (switchcount == 0 && dir == "asc") {
-                dir = "desc";
-                switching = true;
-            }
-        }
+    // 4. LA CLÉ : On ré-injecte les lignes triées dans le tbody
+    // appendChild sur un élément déjà présent le déplace (ne le duplique pas)
+    rows.forEach(row => tbody.appendChild(row));
+
+    // 5. Mise à jour de l'état et des icônes
+    table.setAttribute("data-sort-dir", currentDir);
+    table.setAttribute("data-sort-col", n);
+    updateSortIcons(n, currentDir);
+}
+
+function getVal(td, n) {
+    if (!td) return "";
+    
+    // Index 3 : Période (était l'index 2 avant)
+    if (n === 3) {
+        const text = td.innerText.toLowerCase();
+        const moisMap = {'janvier':'01','février':'02','mars':'03','avril':'04','mai':'05','juin':'06','juillet':'07','août':'08','septembre':'09','octobre':'10','novembre':'11','décembre':'12'};
+        const annee = text.match(/\d{4}/) ? text.match(/\d{4}/)[0] : "0000";
+        let mois = "00";
+        for (let key in moisMap) { if (text.includes(key)) mois = moisMap[key]; }
+        return annee + mois; 
     }
-    updateSortIcons(n, dir);
+
+    // Index 5 : Statut (était l'index 4)
+    if (n === 5) {
+        return td.querySelector('.badge')?.innerText.trim().toLowerCase() || td.innerText.trim().toLowerCase();
+    }
+
+    // Index 6 : Date de soumission (était l'index 5)
+    if (n === 6) {
+        const dateMatch = td.innerText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        return dateMatch ? dateMatch[3] + dateMatch[2] + dateMatch[1] : "00000000";
+    }
+
+    // Par défaut (Collaborateur, Programme, Rôle, Site)
+    return td.innerText.trim().toLowerCase();
 }
 
 function updateSortIcons(columnIndex, direction) {
-    const headers = document.querySelectorAll('th.sortable i');
-    headers.forEach((icon, index) => {
+    document.querySelectorAll('th.sortable i').forEach((icon, index) => {
+        const parentIndex = icon.closest('th').cellIndex;
         icon.className = 'bi bi-arrow-down-up ms-1 small text-muted';
-        if (index === columnIndex) {
+        if (parentIndex === columnIndex) {
             icon.className = direction === 'asc' ? 'bi bi-sort-alpha-down text-primary' : 'bi bi-sort-alpha-up-alt text-primary';
         }
     });

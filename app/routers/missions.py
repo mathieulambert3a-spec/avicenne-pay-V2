@@ -98,7 +98,6 @@ async def update_mission(
 @router.post("/{mission_id}/delete", name="delete_mission")
 async def delete_mission(
     mission_id: int,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(can_manage_missions),
 ):
@@ -106,19 +105,21 @@ async def delete_mission(
     mission = result.scalar_one_or_none()
     
     if mission:
-        # On vérifie l'historique
+        # Vérification si la mission est utilisée dans des déclarations existantes
         subq = select(SousMission.id).where(SousMission.mission_id == mission_id)
         query = select(LigneDeclaration).where(LigneDeclaration.sous_mission_id.in_(subq))
         line_check = await db.execute(query)
         
         if line_check.scalars().first():
+            # CAS HISTORIQUE : On ne peut pas supprimer, donc on cache (Soft Delete)
             mission.is_active = False
+            # Optionnel : Tu pourrais ici rediriger avec un paramètre ?msg=used
         else:
+            # CAS VIERGE : On supprime vraiment de la base
             await db.delete(mission)
         
         await db.commit()
     
-    # FORCE LA REDIRECTION VERS LE NOM DE LA FONCTION
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
 
 
@@ -246,3 +247,28 @@ async def delete_sub_mission(
         await db.commit()
             
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
+
+@router.get("/", response_class=HTMLResponse)
+async def list_missions(
+    request: Request, 
+    db: AsyncSession = Depends(get_db), 
+    current_user=Depends(can_manage_missions)
+):
+    # On utilise selectinload pour charger les enfants en une seule requête
+    # On trie par 'ordre' pour respecter ton catalogue initial
+    result = await db.execute(
+        select(Mission)
+        .options(selectinload(Mission.sous_missions))
+        .order_by(Mission.ordre.asc()) 
+    )
+    missions = result.scalars().all()
+    
+    return templates.TemplateResponse(
+        "referentiel_missions.html",
+        {
+            "request": request, 
+            "user": current_user, 
+            "missions": missions,
+            "unites_disponibles": UNITES_CHOICES
+        }
+    )

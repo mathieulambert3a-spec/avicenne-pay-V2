@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Modifier Profil – {{ u.email }}{% endblock %}
+{% block title %}Administration – {{ u.email }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -8,7 +8,7 @@
     <nav aria-label="breadcrumb" class="mb-4">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="/admin/users" class="text-decoration-none">Gestion des Utilisateurs</a></li>
-            <li class="breadcrumb-item active">Édition de {{ u.prenom or u.email }}</li>
+            <li class="breadcrumb-item active">Administration de {{ u.prenom or u.email }}</li>
         </ol>
     </nav>
 
@@ -16,43 +16,70 @@
         <div class="col-lg-10">
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-person-gear me-2"></i>Modifier le profil collaborateur</h5>
+                    <h5 class="mb-0"><i class="bi bi-shield-lock me-2"></i>Administration du profil</h5>
                     <span class="badge {{ 'bg-success' if u.is_active else 'bg-secondary' }}">
-                        {{ 'Actif' if u.is_active else 'Inactif' }}
+                        {{ 'Compte Actif' if u.is_active else 'Compte Inactif' }}
                     </span>
                 </div>
 
                 <div class="card-body p-4 bg-light">
-                    <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-3">
-                        
-                        {# --- SECTION 1 : IDENTITÉ --- #}
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-uppercase">Prénom</label>
-                            <input type="text" name="prenom" class="form-control" value="{{ u.prenom or '' }}" placeholder="Prénom">
+                    {% if request.query_params.get('error') == 'duplicate_resp' %}
+                    <div class="alert alert-danger shadow-sm border-start border-4 border-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <strong>Erreur d'affectation :</strong> Un Responsable est déjà enregistré pour cette matière sur ce site.
+                    </div>
+                    {% endif %}
+                    <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-4">
+                        <input type="hidden" name="email" value="{{ u.email }}">
+                        {# --- SECTION 1 : IDENTITÉ (LECTURE SEULE / NON MODIFIABLE) --- #}
+                        <div class="col-12">
+                            <div class="card border-0 bg-white-50 border-start border-4 border-secondary shadow-sm">
+                                <div class="card-body py-3">
+                                    <h6 class="text-muted text-uppercase small fw-bold mb-3">
+                                        <i class="bi bi-person-badge me-2"></i>Informations personnelles (Lecture seule)
+                                    </h6>
+                                    <div class="row g-3">
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted mb-0">Collaborateur</label>
+                                            <div class="fw-bold">{{ u.prenom or '-' }} {{ u.nom or '' }}</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted mb-0">Email</label>
+                                            <div class="text-primary text-break">{{ u.email }}</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted mb-0">Téléphone</label>
+                                            <div class="fw-bold">
+                                                {% if u.telephone %}
+                                                    <i class="bi bi-telephone text-secondary me-1"></i>{{ u.telephone }}
+                                                {% else %}
+                                                    <span class="text-muted fw-normal small italic">Non renseigné</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted mb-0">Cursus déclaré</label>
+                                            <div>
+                                                <span class="badge bg-light text-dark border">{{ u.filiere|string if u.filiere else 'N/A' }}</span>
+                                                <span class="badge bg-light text-dark border">{{ u.annee|string if u.annee else '' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-uppercase">Nom</label>
-                            <input type="text" name="nom" class="form-control" value="{{ u.nom or '' }}" placeholder="NOM">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-uppercase">Email</label>
-                            <input type="email" name="email" class="form-control" value="{{ u.email }}" required>
-                        </div>
-
-                        <hr class="my-3 text-muted">
-
-                        {# --- SECTION 2 : RÔLE & SITE --- #}
-                        <div class="col-md-6">
+                        {# --- SECTION 2 : RÔLE & SITE (MODIFIABLES) --- #}
+                        <div class="col-md-6 mt-4">
                             <label class="form-label small fw-bold text-uppercase text-primary">Rôle Système</label>
                             <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm">
                                 {% for r in roles %}
-                                {# CORRECTION : Utilisation de |string pour éviter le crash .value #}
                                 <option value="{{ r }}" {% if u.role|string == r|string %}selected{% endif %}>{{ r|upper }}</option>
                                 {% endfor %}
                             </select>
+                            <div class="form-text small">Définit les permissions d'accès au dashboard.</div>
                         </div>
 
-                        <div class="col-md-6 section-collaborateur">
+                        <div class="col-md-6 mt-4 section-collaborateur">
                             <label class="form-label small fw-bold text-uppercase">Site d'affectation</label>
                             <select name="site" class="form-select shadow-sm">
                                 <option value="">-- Aucun site --</option>
@@ -62,57 +89,43 @@
                             </select>
                         </div>
 
-                        {# --- SECTION 3 : PARCOURS (FILIÈRE / ANNÉE) --- #}
-                        <div class="col-md-6 section-collaborateur">
-                            <label class="form-label small fw-bold text-uppercase">Filière</label>
-                            <select name="filiere" class="form-select shadow-sm">
-                                <option value="">-- Choisir --</option>
-                                {% for f in filieres %}
-                                <option value="{{ f }}" {% if u.filiere|string == f|string %}selected{% endif %}>{{ f }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div class="col-md-6 section-collaborateur">
-                            <label class="form-label small fw-bold text-uppercase">Année d'étude</label>
-                            <select name="annee" class="form-select shadow-sm">
-                                <option value="">-- Choisir --</option>
-                                {% for a in annees %}
-                                <option value="{{ a }}" {% if u.annee|string == a|string %}selected{% endif %}>{{ a }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        {# --- SECTION 4 : PÉRIMÈTRE D'ENSEIGNEMENT --- #}
-                        <div class="col-12 section-collaborateur mt-4">
-                            <div class="card border-0 shadow-sm bg-white">
-                                <div class="card-body row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label small fw-bold"><i class="bi bi-book me-1"></i>Programme</label>
-                                        <select name="programme" id="programmeSelect" class="form-select">
-                                            <option value="">-- Sélectionner un programme --</option>
-                                            {% for p in programmes %}
-                                            <option value="{{ p }}" {% if u.programme|string == p|string %}selected{% endif %}>{{ p }}</option>
-                                            {% endfor %}
-                                        </select>
+                        {# --- SECTION 3 : PÉRIMÈTRE D'ENSEIGNEMENT (MODIFIABLES) --- #}
+                        <div class="col-12 section-collaborateur">
+                            <div class="card border-primary-subtle shadow-sm bg-white">
+                                <div class="card-body">
+                                    <h6 class="card-title small fw-bold text-uppercase mb-3">Affectation Pédagogique</h6>
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold"><i class="bi bi-book me-1"></i>Programme</label>
+                                            <select name="programme" id="programmeSelect" class="form-select">
+                                                <option value="">-- Sélectionner un programme --</option>
+                                                {% for p in programmes %}
+                                                <option value="{{ p }}" {% if u.programme|string == p|string %}selected{% endif %}>{{ p }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small fw-bold"><i class="bi bi-tags me-1"></i>Matière / UE</label>
+                                            <select name="matiere" id="matiereSelect" class="form-select">
+                                                {# Rempli dynamiquement par JS #}
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small fw-bold"><i class="bi bi-tags me-1"></i>Matière / UE</label>
-                                        <select name="matiere" id="matiereSelect" class="form-select">
-                                            {# Rempli dynamiquement par JS #}
-                                        </select>
+                                    <div class="mt-2 text-warning small fw-bold">
+                                        <i class="bi bi-info-circle-fill me-1"></i> 
+                                        Note : Un RESP est unique par matière, programme et site.
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         {# --- ACTIONS --- #}
-                        <div class="col-12 d-flex justify-content-between mt-5">
-                            <a href="/admin/users" class="btn btn-outline-secondary px-4">
-                                <i class="bi bi-x-circle me-1"></i> Annuler
+                        <div class="col-12 d-flex justify-content-between mt-5 pt-3 border-top">
+                            <a href="/admin/users" class="btn btn-outline-secondary px-4 rounded-pill">
+                                <i class="bi bi-arrow-left me-1"></i> Retour
                             </a>
-                            <button type="submit" class="btn btn-primary px-5 shadow">
-                                <i class="bi bi-check2-circle me-1"></i> Enregistrer les modifications
+                            <button type="submit" class="btn btn-primary px-5 shadow rounded-pill fw-bold">
+                                <i class="bi bi-save me-1"></i> Enregistrer les modifications
                             </button>
                         </div>
                     </form>
@@ -149,6 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const opt = document.createElement('option');
                 opt.value = m;
                 opt.textContent = m;
+                // On pré-sélectionne la matière si c'est celle de l'utilisateur
                 if (m === CURRENT_MATIERE) opt.selected = true;
                 matSelect.appendChild(opt);
             });
@@ -156,6 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function checkRole() {
+        // Cache les options d'affectation si l'utilisateur est Admin
         const isExcluded = (roleSelect.value === 'admin');
         sectionsCollab.forEach(function(section) {
             section.style.display = isExcluded ? 'none' : 'block';
@@ -165,6 +180,7 @@ document.addEventListener('DOMContentLoaded', function() {
     progSelect.addEventListener('change', updateMatieres);
     roleSelect.addEventListener('change', checkRole);
 
+    // Initialisation au chargement de la page
     checkRole();
     updateMatieres();
 });

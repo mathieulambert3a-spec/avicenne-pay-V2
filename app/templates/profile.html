@@ -1,115 +1,122 @@
-{% extends "base.html" %}
-{% block title %}Mon profil – Avicenne Pay{% endblock %}
+    {% extends "base.html" %}
+    {% block title %}Mon profil – Avicenne Pay{% endblock %}
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-0"><i class="bi bi-person-circle text-primary me-2"></i>Mon profil</h1>
-        <p class="text-muted small mb-0">Identifiant de connexion : <strong>{{ user.email }}</strong></p>
+    {% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0"><i class="bi bi-person-circle text-primary me-2"></i>Mon profil</h1>
+            <p class="text-muted small mb-0">Identifiant de connexion : <strong>{{ user.email }}</strong></p>
+        </div>
+        
+        {# Statut de complétude du profil #}
+        {% if user.role.value == 'admin' or user.profil_complete %}
+            <span class="badge bg-success px-3 py-2 fs-6 shadow-sm rounded-pill">
+                <i class="bi bi-check-circle-fill me-1"></i> Profil complet
+            </span>
+        {% else %}
+            <span class="badge bg-warning text-dark px-3 py-2 fs-6 shadow-sm rounded-pill">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> Profil à compléter
+            </span>
+        {% endif %}
     </div>
-    
-    {# Statut de complétude du profil #}
-    {% if user.role.value == 'admin' or user.profil_complete %}
-        <span class="badge bg-success px-3 py-2 fs-6 shadow-sm rounded-pill">
-            <i class="bi bi-check-circle-fill me-1"></i> Profil complet
-        </span>
-    {% else %}
-        <span class="badge bg-warning text-dark px-3 py-2 fs-6 shadow-sm rounded-pill">
-            <i class="bi bi-exclamation-triangle-fill me-1"></i> Profil à compléter
-        </span>
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-check-circle-fill fs-4 me-3"></i>
+            <div>{{ success }}</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
     {% endif %}
-</div>
 
-{% if success %}
-<div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4">
-    <div class="d-flex align-items-center">
-        <i class="bi bi-check-circle-fill fs-4 me-3"></i>
-        <div>{{ success }}</div>
-    </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-{# --- BLOC D'AVERTISSEMENT PROFIL INCOMPLET --- #}
-{% if user.role.value in ['resp', 'tcp'] and not user.profil_complete %}
-    <div class="alert alert-danger border-0 shadow-sm mb-4">
-        <div class="d-flex">
-            <i class="bi bi-shield-exclamation fs-3 me-3"></i>
-            <div>
-                <h5 class="alert-heading fw-bold">Action requise : Paiement bloqué</h5>
-                <p class="mb-2">Votre profil n'est pas encore conforme. Pour pouvoir saisir vos vacations, les informations suivantes sont obligatoires :</p>
-                <div class="row small">
-                    <div class="col-md-6">
-                        <ul class="mb-0">
-                            <li class="{% if user.nom and user.prenom %}text-decoration-line-through text-success{% endif %}">Nom et Prénom</li>
-                            <li class="{% if user.adresse and user.ville %}text-decoration-line-through text-success{% endif %}">Adresse postale complète</li>
-                        </ul>
+    {# --- BLOC D'AVERTISSEMENT PROFIL INCOMPLET --- #}
+    {% if user.role.value in ['resp', 'tcp'] and not user.profil_complete %}
+        <div class="alert alert-danger border-0 shadow-sm mb-4">
+            <div class="d-flex">
+                <i class="bi bi-shield-exclamation fs-3 me-3"></i>
+                <div>
+                    <h5 class="alert-heading fw-bold">Action requise : Paiement bloqué</h5>
+                    <p class="mb-2">Votre profil n'est pas encore conforme. Pour pouvoir saisir vos vacations, les informations suivantes sont obligatoires :</p>
+                    <div class="row small">
+                        <div class="col-md-6">
+                            <ul class="mb-0">
+                                <li class="{% if user.nom and user.prenom %}text-decoration-line-through text-success{% endif %}">Nom et Prénom</li>
+                                <li class="{% if user.adresse and user.ville %}text-decoration-line-through text-success{% endif %}">Adresse postale complète</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <ul class="mb-0">
+                                <li class="{% if nss %}text-decoration-line-through text-success{% endif %}">Numéro de Sécurité Sociale (NSS)</li>
+                                <li class="{% if iban %}text-decoration-line-through text-success{% endif %}">RIB (IBAN)</li>
+                            </ul>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <ul class="mb-0">
-                            <li class="{% if nss %}text-decoration-line-through text-success{% endif %}">Numéro de Sécurité Sociale (NSS)</li>
-                            <li class="{% if iban %}text-decoration-line-through text-success{% endif %}">RIB (IBAN)</li>
-                        </ul>
-                    </div>
+                    <hr>
+                    <p class="mb-0 small italic"><i class="bi bi-info-circle me-1"></i> Une fois remplis, cliquez sur <strong>"Valider et finaliser mon profil"</strong> en bas de page.</p>
                 </div>
-                <hr>
-                <p class="mb-0 small italic"><i class="bi bi-info-circle me-1"></i> Une fois remplis, cliquez sur <strong>"Valider et finaliser mon profil"</strong> en bas de page.</p>
             </div>
         </div>
-    </div>
-{% endif %}
+    {% endif %}
 
-<form method="post" action="/profile" autocomplete="off">
-    <div class="row">
-        
-        {# --- COLONNE GAUCHE : IDENTITÉ & COORDONNÉES --- #}
-        <div class="col-lg-6">
-            <div class="card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white fw-bold py-3">
-                    <i class="bi bi-person-vcard me-2 text-primary"></i> Informations Personnelles
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Prénom</label>
-                            <input type="text" name="prenom" class="form-control" value="{{ user.prenom or '' }}" autocomplete="given-name">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Nom</label>
-                            <input type="text" name="nom" class="form-control" value="{{ user.nom or '' }}" autocomplete="family-name">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold text-secondary">Adresse postale</label>
-                            <input type="text" name="adresse" class="form-control" value="{{ user.adresse or '' }}" autocomplete="street-address" placeholder="N° et nom de rue">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-secondary">Code postal</label>
-                            <input type="text" name="code_postal" class="form-control" value="{{ user.code_postal or '' }}" autocomplete="postal-code">
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label small fw-bold text-secondary">Ville</label>
-                            <input type="text" name="ville" class="form-control" value="{{ user.ville or '' }}" autocomplete="address-level2">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-bold text-secondary">Téléphone</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-light text-muted"><i class="bi bi-telephone"></i></span>
-                                <input type="text" name="telephone" class="form-control" value="{{ user.telephone or '' }}" placeholder="06 00 00 00 00">
+    <form method="post" action="/profile" autocomplete="off">
+        <div class="row">
+            
+            {# --- COLONNE GAUCHE : IDENTITÉ & COORDONNÉES --- #}
+            <div class="col-lg-6">
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-white fw-bold py-3">
+                        <i class="bi bi-person-vcard me-2 text-primary"></i> Informations Personnelles
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label small fw-bold text-secondary">Adresse email (Identifiant)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted"><i class="bi bi-envelope"></i></span>
+                                    <input type="text" class="form-control bg-light" value="{{ user.email }}" readonly tabindex="-1">
+                                </div>
+                                <div class="form-text small">L'email ne peut pas être modifié.</div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-secondary">Prénom</label>
+                                <input type="text" name="prenom" class="form-control" value="{{ user.prenom or '' }}" autocomplete="given-name">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-secondary">Nom</label>
+                                <input type="text" name="nom" class="form-control" value="{{ user.nom or '' }}" autocomplete="family-name">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-bold text-secondary">Adresse postale</label>
+                                <input type="text" name="adresse" class="form-control" value="{{ user.adresse or '' }}" autocomplete="street-address" placeholder="N° et nom de rue">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold text-secondary">Code postal</label>
+                                <input type="text" name="code_postal" class="form-control" value="{{ user.code_postal or '' }}" autocomplete="postal-code">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label small fw-bold text-secondary">Ville</label>
+                                <input type="text" name="ville" class="form-control" value="{{ user.ville or '' }}" autocomplete="address-level2">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-bold text-secondary">Téléphone</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted"><i class="bi bi-telephone"></i></span>
+                                    <input type="text" name="telephone" class="form-control" value="{{ user.telephone or '' }}" placeholder="06 00 00 00 00">
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
- {# --- COLONNE DROITE : DONNÉES SENSIBLES & ACADÉMIQUES --- #}
-<div class="col-lg-6">
-    
-    {# Section cachée pour les Admins #}
-    {% if user.role.value != 'admin' %}
-    
-        {# --- INFORMATIONS DE PAIEMENT (Masquées pour les Coordonnateurs) --- #}
-        {% if user.role.value != 'coordo' %}
+    {# --- COLONNE DROITE : DONNÉES SENSIBLES & ACADÉMIQUES --- #}
+    <div class="col-lg-6">
+        
+        {# --- 1. INFORMATIONS DE PAIEMENT (Masquées pour Admin et Coordo) --- #}
+        {# On ne montre le NSS/IBAN que si l'utilisateur édité est un RESP ou un TCP #}
+        {% if user.role.value in ['resp', 'tcp'] %}
         <div class="card mb-4 border-0 shadow-sm border-start border-danger border-4">
             <div class="card-header bg-white fw-bold py-3 text-danger">
                 <i class="bi bi-shield-lock-fill me-2"></i> Données de Paiement (Sécurisées)
@@ -133,30 +140,55 @@
                             <i class="bi bi-eye"></i>
                         </button>
                     </div>
+                    <div id="ibanHelp" class="form-text small">Format SEPA supporté.</div>
                 </div>
             </div>
         </div>
         {% endif %}
 
-        {# --- INFORMATIONS ACADÉMIQUES --- #}
+{# --- 2. INFORMATIONS ACADÉMIQUES (Visible par tous, mais contenu adapté) --- #}
         <div class="card mb-4 border-0 shadow-sm border-start border-success border-4">
             <div class="card-header bg-white fw-bold py-3 text-success">
                 <i class="bi bi-mortarboard-fill me-2"></i> Affectation Académique
             </div>
             <div class="card-body">
-                {# SITE : Pour tout le monde #}
-                <div class="mb-3">
-                    <label class="form-label small fw-bold text-secondary">Site principal</label>
-                    <select name="site" class="form-select border-success-subtle">
-                        <option value="">-- Sélectionner un site --</option>
-                        {% for s in sites %}
-                        <option value="{{ s.value }}" {% if user.site and user.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                {% if user.role.value in ['resp', 'tcp'] %}
-                    {# FILIÈRE ET ANNÉE : Uniquement pour les étudiants #}
+                {# CAS A : L'utilisateur édité est ADMIN #}
+                {% if user.role.value == 'admin' %}
+                    <div class="alert alert-light border-0 mb-0">
+                        <i class="bi bi-shield-check text-primary me-2"></i> 
+                        <strong>Administrateur :</strong> Accès total à tous les sites et programmes.
+                    </div>
+                {# CAS B : L'utilisateur édité est COORDO #}
+                {% elif user.role.value == 'coordo' %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Site d'affectation</label>
+                        <select name="site" class="form-select border-success-subtle">
+                            <option value="">-- Aucun site --</option>
+                            {% for s in sites %}
+                                <option value="{{ s.value }}" {% if user.site and user.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info-subtle">
+                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Mode Coordinateur :</strong> Gestion de l'ensemble des programmes du site.
+                    </div>
+                {# CAS C : L'utilisateur édité est RESP ou TCP #}
+                {% else %}
+                    {% set is_restricted = user.role.value in ['resp', 'tcp'] %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Site principal</label>
+                        <select name="site" class="form-select {% if is_restricted %}bg-light text-muted{% endif %}" 
+                            {% if is_restricted %}disabled{% endif %}>
+                            <option value="">-- Sélectionner un site --</option>
+                            {% for s in sites %}
+                            <option value="{{ s.value }}" {% if user.site and user.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if is_restricted %}
+                            <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
+                            <div class="form-text small italic text-muted"><i class="bi bi-lock-fill"></i> Géré par l'administration.</div>
+                        {% endif %}
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label small fw-bold text-secondary">Ma filière</label>
@@ -177,144 +209,146 @@
                             </select>
                         </div>
                     </div>
-
-                    {# PROGRAMME ET MATIÈRE #}
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-secondary">Programme d'enseignement</label>
-                        <select name="programme" id="programmeSelect" class="form-select" onchange="updateMatieres()">
+                        <select name="programme" id="programmeSelect" onchange="updateMatieres()"
+                            class="form-select {% if is_restricted %}bg-light text-muted{% endif %}" 
+                            {% if is_restricted %}disabled{% endif %}>
                             <option value="">-- Sélectionner --</option>
                             {% for p in programmes %}
                             <option value="{{ p.value }}" {% if user.programme and user.programme.value == p.value %}selected{% endif %}>{{ p.value }}</option>
                             {% endfor %}
                         </select>
+                        {% if is_restricted %}
+                            <input type="hidden" name="programme" value="{{ user.programme.value if user.programme else '' }}">
+                        {% endif %}
                     </div>
                     <div class="mb-1">
                         <label class="form-label small fw-bold text-secondary">Matière / Spécialité</label>
-                        <select name="matiere" id="matiereSelect" class="form-select">
+                        <select name="matiere" id="matiereSelect" 
+                            class="form-select {% if is_restricted %}bg-light text-muted{% endif %}"
+                            {% if is_restricted %}disabled{% endif %}>
                             <option value="">-- Choisir d'abord un programme --</option>
                         </select>
-                    </div>
-
-                {% elif user.role.value == 'coordo' %}
-                    <div class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info-subtle">
-                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Mode Coordinateur :</strong> Vous supervisez l'ensemble des programmes sur le site de <strong>{{ user.site.value if user.site else 'votre affectation' }}</strong>.
+                        {% if is_restricted %}
+                            <input type="hidden" name="matiere" value="{{ user.matiere or '' }}">
+                        {% endif %}
                     </div>
                 {% endif %}
             </div>
         </div>
-            {% endif %}
-        </div>
-
-            {# --- ACTIONS DU FORMULAIRE --- #}
-            <div class="card border-0 shadow-sm bg-light mt-3">
-                <div class="card-body d-flex flex-wrap gap-3 justify-content-end">
-                    {% if user.role.value == 'admin' %}
-                        <button type="submit" class="btn btn-primary px-5 py-2 shadow-sm fw-bold">
-                            <i class="bi bi-save2 me-2"></i> Enregistrer les modifications
-                        </button>
-                    {% else %}
-                        <button type="submit" name="profil_complete" value="" class="btn btn-white border px-4 py-2">
-                            <i class="bi bi-save me-2 text-muted"></i> Sauvegarder (Brouillon)
-                        </button>
-                        <button type="submit" name="profil_complete" value="on" 
-                            class="btn {% if user.profil_complete %}btn-success{% else %}btn-danger animate-pulse{% endif %} px-4 py-2 shadow-sm fw-bold">
-                            <i class="bi bi-check-lg me-2"></i> Valider et finaliser mon profil
-                        </button>
-                    {% endif %}
-                </div>
+        {# --- ACTIONS DU FORMULAIRE --- #}
+        <div class="card border-0 shadow-sm bg-light mt-3">
+            <div class="card-body d-flex justify-content-end">
+                {% if user.role.value == 'admin' %}
+                    <button type="submit" class="btn btn-primary px-5 py-2 shadow-sm fw-bold">
+                        <i class="bi bi-save2 me-2"></i> Enregistrer les modifications
+                    </button>
+                {% else %}
+                    <button type="submit" name="profil_complete" value="on" 
+                        class="btn {% if user.profil_complete %}btn-success{% else %}btn-danger animate-pulse{% endif %} px-5 py-2 shadow-sm fw-bold">
+                        {% if user.profil_complete %}
+                            <i class="bi bi-check-circle me-2"></i> Mettre à jour le profil
+                        {% else %}
+                            <i class="bi bi-send-check me-2"></i> Valider et finaliser le profil
+                        {% endif %}
+                    </button>
+                {% endif %}
             </div>
-</form>
-{% endblock %}
+        </div>
+    </div> {# Fin de la colonne de droite #}
+    </form>
+    {% endblock %}
 
-{% block scripts %}
-<script>
-// --- CONFIGURATION DES MATIERES ---
-const MATIERES = JSON.parse('{{ matieres | tojson | safe if matieres else "{}" }}');
-const currentMatiere = "{{ user.matiere or '' }}";
+    {% block scripts %}
+    <script>
+    // --- CONFIGURATION DES MATIERES ---
+    const MATIERES = JSON.parse('{{ matieres | tojson | safe if matieres else "{}" }}');
+    const currentMatiere = "{{ user.matiere or '' }}";
 
-function updateMatieres() {
-    const programmeSelect = document.getElementById('programmeSelect');
-    const select = document.getElementById('matiereSelect');
-    if (!programmeSelect || !select) return;
+    function updateMatieres() {
+        const programmeSelect = document.getElementById('programmeSelect');
+        const select = document.getElementById('matiereSelect');
+        if (!programmeSelect || !select) return;
 
-    select.innerHTML = '<option value="">-- Choisir --</option>';
-    const programme = programmeSelect.value;
+        select.innerHTML = '<option value="">-- Choisir --</option>';
+        const programme = programmeSelect.value;
 
-    if (programme && MATIERES[programme]) {
-        MATIERES[programme].forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            if (m === currentMatiere) opt.selected = true;
-            select.appendChild(opt);
+        if (programme && MATIERES[programme]) {
+            MATIERES[programme].forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                if (m === currentMatiere) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+    }
+
+    // --- VISIBILITÉ DES CHAMPS MASQUÉS ---
+    function toggleVisibility(fieldId, btn) {
+        const field = document.getElementById(fieldId);
+        const icon = btn.querySelector('i');
+        if (field.type === 'password') {
+            field.type = 'text';
+            icon.classList.replace('bi-eye', 'bi-eye-slash');
+        } else {
+            field.type = 'password';
+            icon.classList.replace('bi-eye-slash', 'bi-eye');
+        }
+    }
+
+    // --- FORMATAGE AUTOMATIQUE NSS (FR) ---
+    const nssInput = document.getElementById('nssField');
+    if (nssInput) {
+        nssInput.addEventListener('input', function (e) {
+            let val = e.target.value.replace(/\D/g, ''); // Uniquement chiffres
+            if (val.length > 15) val = val.substring(0, 15);
+            
+            let res = '';
+            if (val.length > 0) res += val.substring(0, 1);
+            if (val.length > 1) res += ' ' + val.substring(1, 3);
+            if (val.length > 3) res += ' ' + val.substring(3, 5);
+            if (val.length > 5) res += ' ' + val.substring(5, 7);
+            if (val.length > 7) res += ' ' + val.substring(7, 10);
+            if (val.length > 10) res += ' ' + val.substring(10, 13);
+            if (val.length > 13) res += ' | ' + val.substring(13, 15);
+            
+            e.target.value = res;
         });
     }
-}
 
-// --- VISIBILITÉ DES CHAMPS MASQUÉS ---
-function toggleVisibility(fieldId, btn) {
-    const field = document.getElementById(fieldId);
-    const icon = btn.querySelector('i');
-    if (field.type === 'password') {
-        field.type = 'text';
-        icon.classList.replace('bi-eye', 'bi-eye-slash');
-    } else {
-        field.type = 'password';
-        icon.classList.replace('bi-eye-slash', 'bi-eye');
-    }
-}
+    // --- FORMATAGE AUTOMATIQUE IBAN (MULTILINGUE) ---
+    const ibanInput = document.getElementById('ibanField');
+    if (ibanInput) {
+        ibanInput.addEventListener('input', function (e) {
+            let val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            if (val.length > 34) val = val.substring(0, 34); // Max théorique mondial
+            
+            // Découpage par blocs de 4 pour la lisibilité universelle
+            let formatted = val.match(/.{1,4}/g);
+            e.target.value = formatted ? formatted.join(' ') : val;
 
-// --- FORMATAGE AUTOMATIQUE NSS (FR) ---
-const nssInput = document.getElementById('nssField');
-if (nssInput) {
-    nssInput.addEventListener('input', function (e) {
-        let val = e.target.value.replace(/\D/g, ''); // Uniquement chiffres
-        if (val.length > 15) val = val.substring(0, 15);
-        
-        let res = '';
-        if (val.length > 0) res += val.substring(0, 1);
-        if (val.length > 1) res += ' ' + val.substring(1, 3);
-        if (val.length > 3) res += ' ' + val.substring(3, 5);
-        if (val.length > 5) res += ' ' + val.substring(5, 7);
-        if (val.length > 7) res += ' ' + val.substring(7, 10);
-        if (val.length > 10) res += ' ' + val.substring(10, 13);
-        if (val.length > 13) res += ' | ' + val.substring(13, 15);
-        
-        e.target.value = res;
-    });
-}
-
-// --- FORMATAGE AUTOMATIQUE IBAN (MULTILINGUE) ---
-const ibanInput = document.getElementById('ibanField');
-if (ibanInput) {
-    ibanInput.addEventListener('input', function (e) {
-        let val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        if (val.length > 34) val = val.substring(0, 34); // Max théorique mondial
-        
-        // Découpage par blocs de 4 pour la lisibilité universelle
-        let formatted = val.match(/.{1,4}/g);
-        e.target.value = formatted ? formatted.join(' ') : val;
-
-        // Feedback visuel si étranger
-        if (val.length >= 2) {
-            const country = val.substring(0, 2);
-            if (country !== 'FR' && country.match(/[A-Z]{2}/)) {
-                this.classList.add('border-warning');
-                document.getElementById('ibanHelp').innerHTML = `<span class="text-warning fw-bold"><i class="bi bi-globe"></i> IBAN étranger (${country}) détecté.</span>`;
-            } else {
-                this.classList.remove('border-warning');
-                document.getElementById('ibanHelp').innerText = "Format SEPA supporté.";
+            // Feedback visuel si étranger
+            if (val.length >= 2) {
+                const country = val.substring(0, 2);
+                if (country !== 'FR' && country.match(/[A-Z]{2}/)) {
+                    this.classList.add('border-warning');
+                    document.getElementById('ibanHelp').innerHTML = `<span class="text-warning fw-bold"><i class="bi bi-globe"></i> IBAN étranger (${country}) détecté.</span>`;
+                } else {
+                    this.classList.remove('border-warning');
+                    document.getElementById('ibanHelp').innerText = "Format SEPA supporté.";
+                }
             }
-        }
-    });
-}
+        });
+    }
 
-// --- INITIALISATION ---
-document.addEventListener('DOMContentLoaded', () => {
-    updateMatieres();
-    // Déclenche le formatage au chargement pour les données existantes
-    if (nssInput && nssInput.value) nssInput.dispatchEvent(new Event('input'));
-    if (ibanInput && ibanInput.value) ibanInput.dispatchEvent(new Event('input'));
-});
-</script>
-{% endblock %}
+    // --- INITIALISATION ---
+    document.addEventListener('DOMContentLoaded', () => {
+        updateMatieres();
+        // Déclenche le formatage au chargement pour les données existantes
+        if (nssInput && nssInput.value) nssInput.dispatchEvent(new Event('input'));
+        if (ibanInput && ibanInput.value) ibanInput.dispatchEvent(new Event('input'));
+    });
+    </script>
+    {% endblock %}
