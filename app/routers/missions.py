@@ -13,9 +13,9 @@ from app.models.mission import Mission
 from app.models.sub_mission import SousMission
 from app.models.declaration import Declaration, LigneDeclaration
 from app.schemas.constants import UNITES_CHOICES
+from app.common.templates import templates
 
 router = APIRouter(prefix="/admin/referentiel/missions")
-templates = Jinja2Templates(directory="app/templates")
 
 # Sécurité : Seuls Admin et Coordo accèdent à ces routes
 can_manage_missions = require_role([Role.admin, Role.coordo])
@@ -56,6 +56,7 @@ async def edit_mission_form(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(can_manage_missions),
 ):
+    
     """Édite une mission (charge les sous-missions pour éviter l'erreur Greenlet)."""
     result = await db.execute(
         select(Mission)

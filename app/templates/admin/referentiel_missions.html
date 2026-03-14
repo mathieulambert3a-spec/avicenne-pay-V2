@@ -15,6 +15,7 @@
                 Configurez les missions et tarifs que les intervenants pourront déclarer.
             </p>
         </div>
+        {# FIX : On pointe vers modalAddMission qui est l'ID correct pour la création #}
         <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAddMission">
             <i class="bi bi-plus-lg me-2"></i>Nouvelle Mission Parent
         </button>
@@ -88,7 +89,6 @@
                             </form>
                         </div>
                     </div>
-
                     <div class="table-responsive">
                         <table class="table table-sm table-hover align-middle">
                             <thead class="table-light">
@@ -144,32 +144,31 @@
 {# 1. MODAL : AJOUT MISSION PARENT #}
 <div class="modal fade" id="modalAddMission" tabindex="-1">
     <div class="modal-dialog">
-        <form action="/admin/referentiel/missions/add" method="post" class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="bi bi-folder-plus me-2"></i>Nouvelle Mission Parent</h5>
+        {# CHANGEMENT : action="/add" -> "/new" #}
+        <form action="/admin/referentiel/missions/new" method="post" class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Nouvelle Mission Parent</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Nom de la Mission</label>
-                    <input type="text" name="nom" class="form-control" placeholder="ex: Enseignement, Administratif..." required>
+                    {# CHANGEMENT : name="nom" -> "titre" #}
+                    <input type="text" name="titre" class="form-control" placeholder="ex: Réunions, Formations..." required>
                 </div>
                 
-                <div class="form-check form-switch p-3 border rounded bg-light mx-0 shadow-sm">
+                <div id="addRespSwitchContainer" class="form-check form-switch p-3 border rounded bg-light mx-0 shadow-sm">
                     <div class="d-flex align-items-center">
                         <input class="form-check-input ms-0" type="checkbox" name="resp_only" id="flexSwitchResp" style="cursor: pointer;">
-                        <label class="form-check-label fw-bold text-primary ms-3 mb-0" for="flexSwitchResp" style="cursor: pointer;">
+                        <label class="form-check-label fw-bold text-success ms-3 mb-0" for="flexSwitchResp" style="cursor: pointer;">
                             <i class="bi bi-person-badge-fill me-1"></i>Réservé aux Responsables (RESP)
                         </label>
-                    </div>
-                    <div class="form-text small mt-2 ps-1">
-                        La quantité sera bloquée à 1 et cette mission sera invisible pour les comptes TCP.
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
-                <button type="submit" class="btn btn-primary">Créer la mission</button>
+                <button type="submit" class="btn btn-success">Créer la mission</button>
             </div>
         </form>
     </div>
@@ -193,19 +192,19 @@
                 
                 <div id="respHelpText" class="alert alert-warning py-2 px-3 small d-none mb-3">
                     <i class="bi bi-info-circle-fill me-2"></i>
-                    <strong>Attention :</strong> Cette mission est réservée aux RESP. La quantité sera bloquée à 1.
+                    <strong>Attention :</strong> Cette mission est réservée aux RESP.
                 </div>
 
                 <div class="mb-3">
                     <label class="form-label small fw-bold text-uppercase text-muted">Nom de la sous-mission</label>
-                    <input type="text" name="nom" class="form-control" required>
+                    <input type="text" name="titre" class="form-control" required>
                 </div>
 
                 <div class="row">
                     <div class="col-6 mb-3">
                         <label class="form-label small fw-bold text-uppercase text-muted">Tarif (€)</label>
                         <div class="input-group">
-                            <input type="number" name="tarif" step="0.5" class="form-control" required>
+                            <input type="number" name="tarif" step="0.01" class="form-control" required>
                             <span class="input-group-text">€</span>
                         </div>
                     </div>
@@ -226,6 +225,7 @@
         </form>
     </div>
 </div>
+
 {# 3. MODAL : MODIFIER MISSION PARENT #}
 <div class="modal fade" id="modalEditMission" tabindex="-1">
     <div class="modal-dialog">
@@ -237,10 +237,11 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Nom de la Mission</label>
-                    <input type="text" name="nom" id="editParentNameInput" class="form-control" required>
+                    {# CHANGEMENT : name="nom" -> "titre" #}
+                    <input type="text" name="titre" id="editParentNameInput" class="form-control" required>
                 </div>
-                
-                <div class="form-check form-switch p-3 border rounded bg-light mx-0 shadow-sm">
+                    
+                <div id="editRespSwitchContainer" class="form-check form-switch p-3 border rounded bg-light mx-0 shadow-sm">
                     <div class="d-flex align-items-center">
                         <input class="form-check-input ms-0" type="checkbox" name="resp_only" id="editFlexSwitchResp" style="cursor: pointer;">
                         <label class="form-check-label fw-bold text-primary ms-3 mb-0" for="editFlexSwitchResp" style="cursor: pointer;">
@@ -261,12 +262,23 @@
 {% block scripts %}
 <script>
 document.addEventListener('click', function (event) {
-    // --- CAS 1 : AJOUTER UNE SOUS-MISSION ---
-    const btnAdd = event.target.closest('.btn-add-sub');
-    if (btnAdd) {
-        const parentId = btnAdd.getAttribute('data-parent-id');
-        const parentName = btnAdd.getAttribute('data-parent-name');
-        const isResp = btnAdd.getAttribute('data-is-resp') === 'true';
+    
+    // --- 1. CLIC SUR "NOUVELLE MISSION PARENT" ---
+    if (event.target.closest('[data-bs-target="#modalAddMission"]')) {
+        const addForm = document.querySelector('#modalAddMission form');
+        if (addForm) addForm.reset();
+        
+        // On s'assure que le switch est visible (au cas où il aurait été caché)
+        const addContainer = document.getElementById('addRespSwitchContainer');
+        if (addContainer) addContainer.style.display = 'block';
+    }
+
+    // --- 2. AJOUTER UNE SOUS-MISSION ---
+    const btnAddSub = event.target.closest('.btn-add-sub');
+    if (btnAddSub) {
+        const parentId = btnAddSub.getAttribute('data-parent-id');
+        const parentName = btnAddSub.getAttribute('data-parent-name');
+        const isResp = btnAddSub.getAttribute('data-is-resp') === 'true';
 
         document.getElementById('parentIdInput').value = parentId;
         document.getElementById('parentNameDisplay').innerText = parentName;
@@ -285,23 +297,38 @@ document.addEventListener('click', function (event) {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAddSubMission')).show();
     }
 
-    // --- CAS 2 : MODIFIER LA MISSION PARENT (Le bouton qui ne marchait pas) ---
-    const btnEdit = event.target.closest('.btn-edit-parent');
-    if (btnEdit) {
-        event.stopPropagation(); // Empêche l'accordéon de s'ouvrir/fermer
-        
-        const mid = btnEdit.getAttribute('data-parent-id');
-        const mname = btnEdit.getAttribute('data-parent-name');
-        const mresp = btnEdit.getAttribute('data-is-resp') === 'true';
+/// --- 3. MODIFIER UNE MISSION PARENT ---
+const btnEdit = event.target.closest('.btn-edit-parent');
+if (btnEdit) {
+    event.preventDefault();
+    
+    const mid = btnEdit.getAttribute('data-parent-id');
+    const mname = btnEdit.getAttribute('data-parent-name');
+    const mresp = btnEdit.getAttribute('data-is-resp') === 'true';
 
-        const form = document.getElementById('formEditMission');
-        form.action = `/admin/referentiel/missions/${mid}/edit`;
-        document.getElementById('editParentNameInput').value = mname;
-        document.getElementById('editFlexSwitchResp').checked = mresp;
+    const form = document.getElementById('formEditMission');
+    
+    // On construit l'URL
+    const nouvelleAction = "/admin/referentiel/missions/" + mid + "/edit";
+    form.action = nouvelleAction; 
 
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditMission')).show();
-    }
+    // AJOUTE CETTE LIGNE POUR DEBUGGER
+    console.log("URL CIBLE : ", form.action); 
+    
+    document.getElementById('editParentNameInput').value = mname;
+    const switchInput = document.getElementById('editFlexSwitchResp');
+    if (switchInput) switchInput.checked = mresp;
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditMission')).show();
+}
 });
+
+const modalEdit = document.getElementById('modalEditMission');
+if (modalEdit) {
+    modalEdit.addEventListener('hidden.bs.modal', function () {
+        modalEdit.removeAttribute('data-mode');
+    });
+}
 
 function confirmDelete(buttonElement) {
     const form = buttonElement.closest('form');

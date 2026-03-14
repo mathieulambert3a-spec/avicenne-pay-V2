@@ -331,7 +331,8 @@
                         <td class="text-end pe-4">
                             <div class="d-flex justify-content-end align-items-center">
                                 <div class="me-3">
-                                    {% if u_role == 'admin' or (u_role == 'resp' and u.role.value == 'tcp') or (u_role == 'coordo' and u.role.value in ['resp', 'tcp']) %}
+                                    {# Modification ici : On retire (u_role == 'resp' ...) #}
+                                    {% if u_role == 'admin' or u_role == 'coordo' %}
                                     <a href="/admin/users/{{ u.id }}/edit" class="btn btn-sm btn-outline-primary px-3 shadow-sm">
                                         <i class="bi bi-pencil-square"></i>
                                     </a>
@@ -339,6 +340,7 @@
                                 </div>
 
                                 <div style="width: 40px;" class="d-flex justify-content-center">
+                                    {# ... reste du code pour l'activation/désactivation (réservé à l'admin) ... #}
                                     {% if u_role == 'admin' and u.id != user.id %}
                                         {% if u.is_active %}
                                             <button type="button" onclick="confirmDesactivation('{{ u.id }}', '{{ u.email }}')" class="btn btn-sm btn-link text-danger p-0 border-0 shadow-none">

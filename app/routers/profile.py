@@ -8,10 +8,9 @@ from app.config import FERNET_KEY
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User, Filiere, Annee, Site, Programme, MATIERES
+from app.common.templates import templates
 
 router = APIRouter(prefix="/profile")
-templates = Jinja2Templates(directory="app/templates")
-
 
 def get_fernet():
     if FERNET_KEY:

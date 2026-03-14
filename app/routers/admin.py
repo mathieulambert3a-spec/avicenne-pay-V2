@@ -1,46 +1,46 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from passlib.context import CryptContext
+from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.ext.asyncio import AsyncSession
-from decimal import Decimal
-from sqlalchemy import String, select, func, and_, or_, text, desc
+from sqlalchemy import select, String, func, and_, or_, text, desc
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload, Session
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
+from datetime import datetime, date
+import asyncio
 import csv
 import io
 import zipfile
+import logging
 
 from io import BytesIO, StringIO
-from datetime import datetime
 from cryptography.fernet import Fernet, InvalidToken
-try:
-    from weasyprint import HTML
-    WEASYPRINT_AVAILABLE = True
-except OSError:
-    WEASYPRINT_AVAILABLE = False
-    print("⚠️ WeasyPrint non chargé (GTK manquant). Les exports PDF seront désactivés.")
-#from weasyprint import HTML
+from weasyprint import HTML
 
+# --- IMPORTS DE SÉCURITÉ ET BDD ---
 from app.database import get_db
 from app.config import FERNET_KEY
 from app.dependencies import get_current_user, require_role
 
-# Imports des modèles
+# --- IMPORTS DES MAILS ---
+from app.services.mail import FastMail, MessageSchema, MessageType, conf
+
+# --- IMPORTS DES MODÈLES ---
 from app import models
 from app.models.user import User, Role, Site, Programme, Filiere, Annee, MATIERES
 from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
 from app.models.sub_mission import SousMission
 from app.models.mission import Mission
 from app.schemas.constants import UNITES_CHOICES
+from app.common.templates import templates
+from app.database import AsyncSessionLocal
 
-import logging
-# Configuration d'un logger pour voir ce qui bloque
+# Configuration du logger
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin")
-templates = Jinja2Templates(directory="app/templates")
 
 # Petit utilitaire pour vérifier si l'user est bien admin
 async def check_admin(user: User = Depends(get_current_user)):
@@ -79,9 +79,9 @@ async def get_stats(
     mission_nom: Optional[str] = Query(None),
     statut: Optional[str] = Query(None),
     start_mois: int = Query(1),
-    start_annee: int = Query(datetime.now().year),
+    start_annee: int = Query(default=date.today().year),
     end_mois: int = Query(12),
-    end_annee: int = Query(datetime.now().year),
+    end_annee: int = Query(default=date.today().year),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -301,6 +301,8 @@ async def get_stats(
         {
             "request": request, 
             "user": current_user,
+            "today_day": date.today().day,
+            "today_month": date.today().month,
             "data_lyon_est": data_lyon_est, 
             "data_lyon_sud": data_lyon_sud,
             "total_avicenne": total_avicenne,
@@ -320,7 +322,7 @@ async def get_stats(
             "toutes_les_matieres": toutes_les_matieres, 
             "missions_groupes": missions_groupes,
             "stats_sites": stats_sites, 
-            "stats_users": stats_users_clean  # On passe la liste nettoyée
+            "stats_users": stats_users_clean
         }
     )
 
@@ -332,6 +334,7 @@ async def export_stats_csv(
     end_mois: int = Query(12),
     end_annee: int = Query(2026),
     programme: Optional[str] = Query(None),
+    matiere: Optional[str] = Query(None),
     statut: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(Role.admin))
@@ -364,6 +367,7 @@ async def export_stats_csv(
         select(
             User.nom, 
             User.prenom, 
+            User.matiere,
             Declaration.site,
             Declaration.statut,
             Declaration.annee, 
@@ -392,7 +396,7 @@ async def export_stats_csv(
     output = StringIO()
     writer = csv.writer(output, delimiter=';')
     # En-tête (13 colonnes)
-    writer.writerow(["Nom", "Prénom", "Site", "Statut", "Mois", "Année", "Prog", "Mission", "Sous-Mission", "Qté", "Unité", "Tarif", "Total"])
+    writer.writerow(["Nom", "Prénom", "Site", "Statut", "Mois", "Année", "Prog", "Matière", "Mission", "Sous-Mission", "Qté", "Unité", "Tarif", "Total"])
 
     for r in rows:
         # Conversion sécurisée des Enums (Statut, Site, Programme)
@@ -408,6 +412,7 @@ async def export_stats_csv(
             r.mois, 
             r.annee, 
             prog_text,
+            r.matiere or "N/A",
             r.m_titre, 
             r.sm_titre,
             str(r.quantite).replace('.', ','), 
@@ -697,22 +702,20 @@ async def manage_referentiel(
     })
 
 # --- ACTION : AJOUTER MISSION PARENT ---
-@router.post("/referentiel/missions/add")
+@router.post("/referentiel/missions/new")
 async def admin_add_mission(
     request: Request,
-    nom: str = Form(...),
-    # On utilise Optional[bool] avec None pour gérer l'absence de la checkbox
+    titre: str = Form(...), # On change 'nom' par 'titre' pour coller au HTML
     resp_only: Optional[bool] = Form(None), 
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(catalogue_manager)
 ):
-    # Si la checkbox n'est pas cochée, elle n'est pas envoyée, donc on met False par défaut
     is_resp_val = True if resp_only else False
 
     new_mission = Mission(
-        titre=nom, 
+        titre=titre, # Utilise 'titre'
         ordre=0, 
-        is_active=True,
+        is_active=True, # On force l'activation ici
         resp_only=is_resp_val
     )
     
@@ -724,24 +727,89 @@ async def admin_add_mission(
 @router.post("/referentiel/sub-mission/add")
 async def admin_add_sub_mission(
     parent_id: int = Form(...),
-    nom: str = Form(...),
+    titre: str = Form(...),
     tarif: float = Form(...),
-    unite: str = Form(""),
+    unite: Optional[str] = Form(None), # Utilise Optional ici
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(catalogue_manager)
 ):
+    # Sécurité : strip() seulement si unite n'est pas None
     unite_value = unite.strip() if unite else None
-    if unite_value and unite_value not in set(UNITES_CHOICES):
-        raise HTTPException(status_code=400, detail="Unité invalide")
-
+    
     new_sm = SousMission(
         mission_id=parent_id,
-        titre=nom,
+        titre=titre,
         tarif=tarif,
         unite=unite_value,
         is_active=True
     )
-    db.add(new_sm)
+    
+    try:
+        db.add(new_sm)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        print(f"ERREUR DB : {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de l'insertion")
+        
+    return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
+
+# --- ACTION : MODIFIER MISSION PARENT ---
+@router.post("/referentiel/missions/{mission_id}/edit")
+async def edit_mission(
+    mission_id: int,
+    titre: str = Form(...),
+    resp_only: Optional[str] = Form(None), 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(catalogue_manager)
+):
+    print(f">>> EDIT MISSION {mission_id}: titre={titre}, resp={resp_only}")
+    
+    try:
+        # 1. On récupère la mission
+        result = await db.execute(select(Mission).where(Mission.id == mission_id))
+        mission = result.scalar_one_or_none()
+        
+        if not mission:
+            print(">>> Erreur: Mission non trouvée")
+            return RedirectResponse(url="/admin/referentiel/missions?error=notfound", status_code=303)
+
+        # 2. On applique les changements
+        mission.titre = titre.strip()
+        # Le switch HTML envoie "on" s'il est coché, None sinon
+        mission.resp_only = True if resp_only else False
+        
+        # 3. On force SQLAlchemy à considérer l'objet comme modifié
+        db.add(mission) 
+        
+        # 4. On valide
+        await db.commit()
+        print(">>> SUCCESS: Mission mise à jour")
+        
+        return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
+
+    except Exception as e:
+        await db.rollback()
+        # C'est ici que tu verras l'erreur réelle dans ton terminal
+        print(f">>> ERREUR CRITIQUE ÉDITION : {str(e)}")
+        import traceback
+        traceback.print_exc() # Affiche toute la pile d'erreur
+        raise HTTPException(status_code=500, detail="Erreur interne serveur")
+
+@router.post("/referentiel/missions/{mission_id}/toggle-active")
+async def toggle_mission_active(
+    mission_id: int, 
+    db: AsyncSession = Depends(get_db)
+):
+    # On récupère la mission parent
+    result = await db.execute(select(Mission).where(Mission.id == mission_id))
+    mission = result.scalar_one_or_none()
+
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission non trouvée")
+
+    mission.is_active = not mission.is_active
+
     await db.commit()
     return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
 
@@ -817,51 +885,203 @@ async def edit_user_save(
         await db.rollback()
         logger.error(f"Erreur edit : {e}")
         return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
-    
-@router.post("/referentiel/missions/{mission_id}/toggle-active")
-async def toggle_mission_active(
-    mission_id: int, 
-    db: AsyncSession = Depends(get_db)
-):
-    # On récupère la mission parent
-    result = await db.execute(select(Mission).where(Mission.id == mission_id))
-    mission = result.scalar_one_or_none()
 
-    if not mission:
-        raise HTTPException(status_code=404, detail="Mission non trouvée")
+# -pdf executor ---
+pdf_executor = ThreadPoolExecutor(max_workers=1)
 
-    mission.is_active = not mission.is_active
-
-    await db.commit()
-    return RedirectResponse(url="/admin/referentiel/missions", status_code=303)
-
-@router.post("/referentiel/missions/{mission_id}/edit")
-async def edit_mission_parent(
-    mission_id: int,
-    nom: str = Form(...),
-    resp_only: bool = Form(False),
-    db: AsyncSession = Depends(get_db) 
-):
-    print(f"--- Tentative d'édition mission {mission_id} (Asynchrone) ---")
-    
-    # 1. Nouvelle syntaxe SQLAlchemy 2.0 pour l'asynchrone
-    result = await db.execute(select(Mission).filter(Mission.id == mission_id))
-    mission = result.scalars().first()
-
-    if not mission:
-        print(f"Erreur : Mission {mission_id} introuvable")
-        return RedirectResponse(url="/admin/referentiel/missions?msg=error", status_code=303)
-
-    # 2. Mise à jour des champs
-    mission.titre = nom
-    mission.resp_only = resp_only
-
+def render_pdf_task(template_name, context):
+    from weasyprint import HTML
     try:
-        # 3. Commit asynchrone
-        await db.commit()
-        print(f"Succès : Mission {mission_id} mise à jour")
-        return RedirectResponse(url="/admin/referentiel/missions?msg=updated", status_code=303)
+        print(f"--- [START] WeasyPrint pour {context['u'].nom}")
+        template = templates.get_template(template_name)
+        html_content = template.render(**context)
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        print(f"✅ OK : {context['u'].nom}")
+        return pdf_bytes
     except Exception as e:
-        await db.rollback()
-        print(f"Erreur DB : {e}")
-        return RedirectResponse(url="/admin/referentiel/missions?msg=error", status_code=303)
+        print(f"❌ Erreur : {e}")
+        return b""
+
+@router.post("/generate-factures")
+async def generate_factures(
+    date_debut: str = Form(...),
+    date_fin: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(Role.admin))
+):
+    try:
+        print(f"--- Lancement de la génération parallèle ---")
+        f_cipher = get_fernet()
+        d_start_proc = datetime.now()
+        
+        start_dt = datetime.strptime(date_debut, "%Y-%m-%d")
+        end_dt = datetime.strptime(date_fin, "%Y-%m-%d")
+
+        # 1. Requête SQL
+        stmt = (
+            select(Declaration)
+            .join(User)
+            .options(
+                selectinload(Declaration.user),
+                selectinload(Declaration.lignes)
+                    .selectinload(LigneDeclaration.sous_mission)
+                    .selectinload(SousMission.mission)
+            )
+            .where(
+                and_(
+                    Declaration.statut == StatutDeclaration.validee,
+                    (Declaration.annee * 100 + Declaration.mois) >= (start_dt.year * 100 + start_dt.month),
+                    (Declaration.annee * 100 + Declaration.mois) <= (end_dt.year * 100 + end_dt.month)
+                )
+            )
+        )
+        
+        result = await db.execute(stmt)
+        declarations = result.scalars().all()
+        print(f"-> {len(declarations)} déclarations à traiter.")
+
+        if not declarations:
+            return RedirectResponse(url="/admin/stats?error=no_data", status_code=303)
+
+        # 2. Préparation de la liste (Dictionnaires simples)
+        data_list = []
+        for dec in declarations:
+            u = dec.user
+            
+            # --- CORRECTION ICI : u.nss_encrypted au lieu de u.nss ---
+            try:
+                nss_clair = decrypt(u.nss_encrypted, f_cipher) if u.nss_encrypted else "Non renseigné"
+            except Exception:
+                nss_clair = u.nss_encrypted if u.nss_encrypted else "Erreur"
+            # -------------------------------------------------------
+
+            prog = u.programme.value if u.programme else "Programme"
+            mat = u.matiere if u.matiere else "Matière"
+            
+            data_list.append({
+                "u": u,
+                "nss": nss_clair,
+                "total": sum(l.quantite * l.sous_mission.tarif for l in dec.lignes),
+                "nature_facture": f"{prog}: {mat}",
+                "dec": dec,
+                "date_gen": datetime.now().strftime("%d/%m/%Y"),
+                "filename": f"Facture_{u.nom}_{dec.mois}_{dec.annee}.pdf"
+            })
+        
+        # --- ÉTAPE 3 : LE TURBO (PARALLÈLE) ---
+        loop = asyncio.get_running_loop()
+        futures = [
+            loop.run_in_executor(pdf_executor, render_pdf_task, "pdf/facture_template.html", item)
+            for item in data_list
+        ]
+
+        # On attend que les 8 cœurs travaillent ensemble
+        pdf_contents = await asyncio.gather(*futures)
+
+        # 4. Création du ZIP final
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for item, content in zip(data_list, pdf_contents):
+                if content: # On ne met dans le ZIP que si le PDF a bien été généré
+                    zip_file.writestr(item["filename"], content)
+
+        # On récupère les octets et on ferme le buffer
+        zip_data = zip_buffer.getvalue()
+        zip_buffer.close()
+
+        duration = (datetime.now() - d_start_proc).seconds
+        print(f"--- Succès : {len(declarations)} PDF générés en {duration}s ---")
+
+        # Utilisation de Response au lieu de StreamingResponse pour un téléchargement direct
+        from fastapi import Response
+        return Response(
+            content=zip_data,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": "attachment; filename=Factures_Avicenne.zip"
+            }
+        )
+
+    except Exception as e:
+        import traceback
+        print(f"ERREUR : {traceback.format_exc()}")
+        return RedirectResponse(url="/admin/stats?error=generation_failed", status_code=303)
+
+# --- LOGIQUE D'ENVOI DES EMAILS (Gardée telle quelle mais optimisée) ---
+
+async def send_reminder_email(email_to, first_name, month_fr):
+    # Ton code HTML actuel est parfait
+    html = f"""
+    <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; padding: 20px;">
+        <h2 style="color: #dc3545;">Rappel Déclaration - Avicenne Pay</h2>
+        <p>Bonjour {first_name},</p>
+        <p>Sauf erreur de notre part, vous n'avez pas encore validé votre déclaration d'activité pour le mois de <strong>{month_fr}</strong>.</p>
+        <p>Nous vous rappelons que la date limite de saisie approche.</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="https://votre-domaine.com/declarations" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">Remplir ma déclaration</a>
+        </div>
+        <p style="font-size: 0.8em; color: #999;">Si vous venez de la soumettre, merci d'ignorer ce message.</p>
+    </div>
+    """
+    message = MessageSchema(
+        subject=f"Rappel : Déclaration de {month_fr} manquante",
+        recipients=[email_to],
+        body=html,
+        subtype=MessageType.html
+    )
+    fm = FastMail(conf)
+    await fm.send_message(message)
+
+async def main_reminder_logic():
+    """ Logique d'envoi avec création d'une session dédiée pour l'arrière-plan """
+    from app.database import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as db:
+        today = date.today() 
+        months_fr = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+                     "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        current_month_name = months_fr[today.month]
+
+        # On récupère tous les utilisateurs qui doivent déclarer
+        result = await db.execute(
+            select(User).where(
+                User.is_active == True,
+                User.role.notin_([Role.admin, Role.coordo])
+            )
+        )
+        users = result.scalars().all()
+        
+        for user in users:
+            # On vérifie si une déclaration validée ou soumise existe
+            decl_check = await db.execute(
+                select(Declaration).where(
+                    Declaration.user_id == user.id,
+                    Declaration.mois == today.month,
+                    Declaration.annee == today.year,
+                    # On ne relance PAS si c'est déjà soumis ou validé
+                    Declaration.statut.in_(["soumise", "validee"]) 
+                )
+            )
+
+            if not decl_check.scalar_one_or_none():
+                try:
+                    await send_reminder_email(user.email, user.prenom, current_month_name)
+                    await asyncio.sleep(1.2) # Anti-spam / Limite SMTP
+                except Exception as e:
+                    print(f"Erreur relance {user.email}: {e}")
+
+# --- LA ROUTE POUR TON BOUTON ---
+
+@router.post("/relance-retardataires")
+async def manual_reminders(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    # Sécurité supplémentaire
+    if current_user.role.value not in ['admin', 'coordo']:
+        raise HTTPException(status_code=403, detail="Action non autorisée")
+        
+    # On lance la tâche sans passer 'db' de la requête (elle créera la sienne)
+    background_tasks.add_task(main_reminder_logic)
+    
+    return {"status": "ok", "count": "en cours"}

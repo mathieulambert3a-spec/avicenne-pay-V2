@@ -13,14 +13,15 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User, Role, Site, Programme, MATIERES
 from app.models.mission import Mission
-from app.models.sub_mission import SousMission 
+from app.models.sub_mission import SousMission
+from app.common.templates import templates
 
 router = APIRouter(prefix="/users")
-templates = Jinja2Templates(directory="app/templates")
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.get("", response_class=HTMLResponse)
-async def list_users(
+async def list_users(   
     request: Request, 
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)

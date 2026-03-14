@@ -1,212 +1,162 @@
-/* Variables de couleurs personnalisées pour Avicenne */
+/* --- Variables de couleurs Avicenne --- */
 :root {
     --primary-color: #0d6efd;
+    --primary-dark: #0a58ca;
     --bg-light: #f8f9fa;
-    --danger-color: #dc3545; /* Ajouté pour l'animation */
+    --danger-color: #dc3545;
+    --warning-color: #ffca2c; /* Jaune Avicenne */
+    --info-soft: #eef2ff;
+    --gray-muted: #6c757d;
 }
 
+/* --- Base & Typographie --- */
 body {
     background-color: var(--bg-light);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #333;
 }
 
-/* Navbar */
+/* --- Navbar --- */
 .navbar {
     border-bottom: 2px solid rgba(0,0,0,0.05);
+    background-color: #fff !important;
 }
 .navbar-brand {
     font-size: 1.3rem;
     letter-spacing: -0.5px;
+    font-weight: 700;
 }
 
-/* Cartes (Cards) */
+/* --- Cartes (Cards) --- */
 .card {
     border: none;
     border-radius: 0.75rem; 
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Ombre légère pour les cartes de stats */
 .shadow-sm {
     box-shadow: 0 .125rem .25rem rgba(0,0,0,.075)!important;
 }
 
-/* Styles pour les tableaux de stats */
+/* --- Bouton "Générer les Factures" (Le fameux jaune flashy) --- */
+.btn-warning {
+    background-color: var(--warning-color);
+    border: none;
+    color: #000 !important;
+    font-weight: 700;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease-in-out;
+}
+
+.btn-warning:hover {
+    background-color: #f0bc10;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-warning:active {
+    transform: translateY(0);
+}
+
+/* --- Tableaux & Stats --- */
 .table thead th {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
-    color: #6c757d;
+    color: var(--gray-muted);
     border-bottom-width: 1px;
+    background-color: rgba(0,0,0,0.01);
 }
 
-/* Badges */
-.badge {
-    font-weight: 500;
-    padding: 0.4em 0.7em;
+.table-hover tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.02);
 }
 
-/* Footer */
-footer {
-    background-color: #ffffff;
-    border-top: 1px solid #e9ecef;
-}
-
-/* Animations de validation de profil */
-@keyframes pulse-red {
-    0% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
-    }
-    70% {
-        transform: scale(1.03);
-        box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
-    }
-    100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
-    }
-}
-
-.animate-pulse {
-    animation: pulse-red 2s infinite;
-    border: 2px solid white !important;
-}
-
-@media print {
-    /* 1. Masquer les éléments interactifs et inutiles */
-    .navbar, .btn, footer, form, #export-csv-btn, .input-group {
-        display: none !important;
-    }
-
-    /* 2. Forcer l'impression des couleurs de fond (Bootstrap les retire par défaut) */
-    body {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-    }
-
-    /* 3. Ajuster les cartes pour économiser l'encre et améliorer la lisibilité */
-    .card {
-        border: 1px solid #dee2e6 !important;
-        box-shadow: none !important;
-        break-inside: avoid; /* Évite de couper une carte en deux entre deux pages */
-        margin-bottom: 1rem !important;
-    }
-
-    /* 4. Forcer les fonds colorés des badges et des cartes de stats */
-    .bg-primary, .bg-success, .badge {
-        background-color: #0d6efd !important; /* Bleu Bootstrap */
-        color: white !important;
-    }
-    
-    .text-white {
-        color: black !important; /* Optionnel : passer le texte en noir pour économiser l'encre */
-    }
-
-    /* 5. Ajuster la taille des graphiques pour qu'ils tiennent sur la largeur */
-    canvas {
-        max-width: 100% !important;
-        height: auto !important;
-    }
-
-    /* 6. Supprimer les marges inutiles du container */
-    .container-fluid {
-        padding: 0 !important;
-        width: 100% !important;
-    }
-}
-
-/* Interactions et Liens */
-.hover-primary {
-    transition: all 0.2s ease;
-    color: inherit;
-}
-
-.hover-primary:hover {
-    color: var(--primary-color) !important;
-    text-decoration: underline !important;
-    cursor: pointer;
-}
-
-.hover-primary:active {
-    opacity: 0.7;
-}
-/* Style pour le référentiel missions */
-.accordion-header .d-flex {
-    width: 100%;
-}
-
-.btn-edit-parent, .btn-outline-success, .btn-outline-secondary {
-    position: relative;
-    z-index: 10; /* Pour passer au-dessus du clic de l'accordéon */
-}
-
-/* On donne un peu d'air au titre pour ne pas qu'il touche les boutons sur mobile */
-.accordion-button {
-    padding-right: 120px !important; 
-}
-
-/* Le jaune Avicenne pour tes boutons si tu veux l'harmoniser */
-.btn-avicenne {
-    background-color: #ffca2c;
-    border-color: #ffca2c;
-    color: #000;
-    font-weight: bold;
-}
-/* Barre de progression dynamique pour les stats */
-.progress-bar-dynamic {
-    width: var(--pg-width, 0%);
-    border-radius: 10px;
-    transition: width 0.6s ease; /* Petit effet fluide au chargement */
-}
-
-/* On prépare aussi des variantes de couleurs subtiles si besoin */
-.bg-primary-subtle {
-    background-color: rgba(13, 110, 253, 0.1) !important;
-}
-
-.bg-success-subtle {
-    background-color: rgba(25, 135, 84, 0.1) !important;
-}
-/* Variables de couleurs personnalisées pour Avicenne */
-:root {
-    --primary-color: #0d6efd;
-    --bg-light: #f8f9fa;
-    --danger-color: #dc3545;
-    --info-soft: #eef2ff; /* Pour les fonds de badges ou avatars */
-}
-
-body {
-    background-color: var(--bg-light);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-/* --- ÉLÉMENTS DE TABLEAUX DE STATS (TOP 10) --- */
-
-/* Avatar circulaire avec initiales */
+/* --- Éléments du Top 10 Contributeurs --- */
 .avatar-circle {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 0.85rem;
-    font-weight: 600;
-    background-color: var(--info-soft);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--info-soft), #e0e7ff);
     color: var(--primary-color);
-    border: 1px solid #e3e6f0;
+    border: 1px solid #d1d9e6;
+    flex-shrink: 0;
 }
 
-/* Badges de rôles et programmes */
-.badge-pill-role {
-    font-size: 0.65rem;
-    padding: 0.35em 0.8em;
-    border-radius: 50rem;
+/* --- Badges & Progress Bars --- */
+.badge {
+    font-weight: 500;
+    padding: 0.45em 0.8em;
 }
 
-/* Utilitaires de couleurs soft */
-.bg-soft-primary { background-color: var(--info-soft); }
-.bg-soft-danger { background-color: rgba(220, 53, 69, 0.1); }
-.bg-soft-warning { background-color: rgba(255, 193, 7, 0.1); }
+.bg-primary-subtle { background-color: rgba(13, 110, 253, 0.1) !important; }
+.bg-success-subtle { background-color: rgba(25, 135, 84, 0.1) !important; }
+.bg-soft-danger { background-color: rgba(220, 53, 69, 0.1); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.2); }
+.bg-soft-warning { background-color: rgba(255, 193, 7, 0.1); color: #856404; border: 1px solid rgba(255, 193, 7, 0.2); }
+
+.progress {
+    background-color: #eaecf4;
+    border-radius: 10px;
+}
+
+.progress-bar-dynamic {
+    width: var(--pg-width, 0%);
+    border-radius: 10px;
+    transition: width 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.1); /* Effet d'entrée fluide */
+}
+
+/* --- Accordéons (Référentiel Missions) --- */
+.accordion-header .d-flex { width: 100%; }
+.accordion-button { padding-right: 120px !important; }
+.btn-edit-parent { position: relative; z-index: 10; }
+
+/* --- Animations --- */
+@keyframes pulse-red {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+    70% { transform: scale(1.03); box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+.animate-pulse {
+    animation: pulse-red 2s infinite;
+    border: 2px solid white !important;
+}
+
+/* --- Impression (Print) --- */
+@media print {
+    .navbar, .btn, footer, form, #export-csv-btn, .input-group, .modal {
+        display: none !important;
+    }
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        background-color: white;
+    }
+    .card {
+        border: 1px solid #dee2e6 !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
+}
+
+/* --- Interactions --- */
+.hover-primary {
+    transition: all 0.2s ease;
+    color: inherit;
+}
+.hover-primary:hover {
+    color: var(--primary-color) !important;
+    text-decoration: underline !important;
+    cursor: pointer;
+}
+/* --- Logique d'affichage dynamique --- */
+
+/* Masque le conteneur du switch uniquement en mode édition */
+[data-mode="edit"] #editRespSwitchContainer {
+    display: none !important;
+}

@@ -207,21 +207,125 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnEditParents = document.querySelectorAll('.btn-edit-parent');
     btnEditParents.forEach(btn => {
         btn.addEventListener('click', function(e) {
-            e.stopPropagation(); // Empêche l'accordéon de s'ouvrir
+            e.stopPropagation(); 
 
             const mid = this.dataset.parentId;
             const mname = this.dataset.parentName;
             const mresp = this.dataset.isResp === 'true';
 
+            const modalEl = document.getElementById('modalEditMission');
             const form = document.getElementById('formEditMission');
-            if (form) {
-                form.action = `/admin/referentiel/mission/${mid}/edit`;
+
+            if (modalEl && form) {
+                // 1. On ajoute l'attribut pour le CSS
+                modalEl.setAttribute('data-mode', 'edit');
+                
+                // 2. On remplit le formulaire
+                form.action = `/admin/referentiel/missions/${mid}/edit`;
                 document.getElementById('editParentNameInput').value = mname;
                 document.getElementById('editFlexSwitchResp').checked = mresp;
 
-                const modal = new bootstrap.Modal(document.getElementById('modalEditMission'));
+                // 3. On affiche la modale
+                const modal = new bootstrap.Modal(modalEl);
                 modal.show();
             }
         });
     });
+
+    // Nettoyage automatique quand on ferme la modale pour que le mode "Ajout" reste normal
+    const modalEdit = document.getElementById('modalEditMission');
+    if (modalEdit) {
+        modalEdit.addEventListener('hidden.bs.modal', function () {
+            modalEdit.removeAttribute('data-mode');
+        });
+    }
 });
+/**
+ * Déclenche la génération des factures avec un retour visuel (SweetAlert2)
+*/
+function lancerGenerationFactures() {
+    const form = document.getElementById('formFacturation');
+    if (!form) return;
+
+    const dateDebut = form.querySelector('[name="date_debut"]').value;
+    const dateFin = form.querySelector('[name="date_fin"]').value;
+
+    if (!dateDebut || !dateFin) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Champs incomplets',
+            text: 'Veuillez sélectionner les dates.',
+            confirmButtonColor: '#ffca2c'
+        });
+        return;
+    }
+
+    // 1. Affichage du loader
+    Swal.fire({
+        title: 'Génération en cours...',
+        text: 'Veuillez patienter, nous préparons votre archive ZIP.',
+        icon: 'info',
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    // 2. Soumission réelle du formulaire
+    form.submit();
+
+    // 3. Fermeture automatique du loader
+    // On attend 5 secondes (temps moyen pour que le serveur commence à répondre)
+    // puis on ferme l'alerte. Le téléchargement continuera en arrière-plan.
+    setTimeout(() => {
+        Swal.close();
+        
+        // Fermer la modal Bootstrap si elle est ouverte
+        const modalEl = document.getElementById('modalFactures');
+        if (modalEl) {
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+        }
+    }, 5000); 
+}
+
+function lancerRelances() {
+    Swal.fire({
+        title: 'Relance des retardataires',
+        text: "Envoyer un email de rappel à tous ceux qui n'ont pas encore déclaré ce mois-ci ?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0d6efd',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="bi bi-send"></i> Oui, envoyer',
+        cancelButtonText: 'Annuler',
+        reverseButtons: true
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Affichage du loader
+            Swal.fire({
+                title: 'Envoi en cours',
+                html: 'Veuillez patienter pendant le traitement...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading()
+                }
+            });
+
+            // Appel API
+            fetch('/admin/run-reminders', { method: 'POST' })
+            .then(async response => {
+                const data = await response.json();
+                if (response.ok) {
+                    Swal.fire('Succès !', data.message, 'success');
+                } else {
+                    Swal.fire('Erreur', data.detail || 'Une erreur est survenue', 'error');
+                }
+            })
+            .catch(error => {
+                Swal.fire('Erreur technique', 'Le serveur ne répond pas.', 'error');
+            });
+        }
+    })
+}

@@ -14,9 +14,10 @@ from app.models.user import User, Role, Site
 from app.models.mission import Mission
 from app.models.sub_mission import SousMission
 from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
+from app.common.templates import templates
 
 router = APIRouter(prefix="/declarations")
-templates = Jinja2Templates(directory="app/templates")
+
 
 MOIS_LABELS = {
     1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",

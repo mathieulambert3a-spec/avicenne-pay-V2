@@ -1,48 +1,59 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi import Form
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 from passlib.context import CryptContext
-from itsdangerous import URLSafeTimedSerializer
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
+from datetime import date
 
 # Imports internes
 from app.database import get_db, engine, Base
-from app.config import SECRET_KEY
-from app.dependencies import get_current_user, get_current_user_optional
+from app.dependencies import get_current_user
 from app.models.user import User, Role
 from app.models.declaration import Declaration
 from app.routers import auth, profile, missions, declarations, admin, users
-from app.models.mission import Mission
-from app.models.sub_mission import SousMission
-from app.routers import admin
 
+# DÉFINITION DU LIFESPAN
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Code exécuté au démarrage
+    # Code exécuté au démarrage : création des tables si elles n'existent pas
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
 
+# --- CREATION DE L'APPLICATION ---
 app = FastAPI(title="Avicenne Pay", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# --- CONFIGURATION CORS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# MONTAGE LES STATIQUES
+# --- CONFIGURATION DES STATIQUES ET TEMPLATES ---
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# Inclusion des routeurs
+# INJECTION GLOBALE : Rend 'today_day' disponible dans TOUS les templates (base.html, etc.)
+# Cela évite les erreurs "today_day is undefined" sans modifier chaque route.
+templates.env.globals.update(
+    today_day=date.today().day,
+    today_month=date.today().month
+)
+
+# --- INCLUSION DES ROUTEURS ---
+app.include_router(admin.router) 
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(missions.router)
 app.include_router(declarations.router)
-app.include_router(admin.router)
 app.include_router(users.router)
 
 # --- MIDDLEWARE DE SÉCURITÉ CSP ---
@@ -50,7 +61,6 @@ app.include_router(users.router)
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     
-    # On définit une politique large pour le développement
     csp_directives = {
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
@@ -62,11 +72,11 @@ async def add_security_headers(request: Request, call_next):
     }
     
     csp_string = "; ".join([f"{k} {v}" for k, v in csp_directives.items()])
-    
     response.headers["Content-Security-Policy"] = csp_string
     return response
 
 # --- ROUTES PRINCIPALES ---
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/dashboard", status_code=302)
@@ -78,9 +88,8 @@ async def dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Affiche le tableau de bord avec les notifications de l'administration.
+    Affiche le tableau de bord avec les dernières déclarations de l'utilisateur.
     """
-    # Récupération des 5 dernières déclarations pour afficher les statuts et commentaires
     stmt = (
         select(Declaration)
         .where(Declaration.user_id == current_user.id)
@@ -90,6 +99,7 @@ async def dashboard(
     result = await db.execute(stmt)
     user_declarations = result.scalars().all()
 
+    # Note : today_day est injecté globalement, pas besoin de l'ajouter ici
     return templates.TemplateResponse(
         "dashboard.html", 
         {
@@ -100,6 +110,7 @@ async def dashboard(
     )
 
 # --- CONFIGURATION INITIALE (SETUP) ---
+
 @app.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.role == Role.admin))
@@ -115,12 +126,11 @@ async def setup_create_admin(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Vérification de sécurité (si l'admin existe déjà)
+    # 1. Vérification si l'admin existe déjà
     result = await db.execute(select(User).where(User.role == Role.admin))
     if result.scalar_one_or_none():
-        return RedirectResponse("/login", status_code=303) # 303 est préférable pour les redirections POST
+        return RedirectResponse("/login", status_code=303)
 
-    # 2. Validation basique (déjà en partie gérée par le Form(...) de FastAPI)
     if not email or not password:
         return templates.TemplateResponse(
             "setup.html", 
@@ -128,15 +138,15 @@ async def setup_create_admin(
         )
 
     try:
-        # 3. Hachage du mot de passe
+        # 2. Hachage et création
         pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         hashed = pwd_context.hash(password)
 
-        # 4. Création de l'utilisateur admin
         admin_user = User(
             email=email, 
             hashed_password=hashed, 
-            role=Role.admin
+            role=Role.admin,
+            is_active=True # Assure-toi que l'admin est actif par défaut
         )
         
         db.add(admin_user)
@@ -145,17 +155,15 @@ async def setup_create_admin(
         return RedirectResponse("/login?setup=ok", status_code=303)
 
     except IntegrityError:
-        # En cas de doublon d'email ou autre contrainte DB
         await db.rollback()
         return templates.TemplateResponse(
             "setup.html", 
-            {"request": request, "error": "Cet email est déjà utilisé ou une erreur est survenue."}
-        )
+            {"request": request, "error": "Cet email est déjà utilisé."}
+    )
+
     except Exception as e:
         await db.rollback()
-        print(f"Erreur lors du setup: {e}")
         return templates.TemplateResponse(
             "setup.html", 
-            {"request": request, "error": "Une erreur interne est survenue."}
-        )
-
+            {"request": request, "error": f"Erreur interne : {str(e)}"}
+    )
