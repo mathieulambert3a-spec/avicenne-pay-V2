@@ -123,15 +123,14 @@ function confirmDesactivation(userId, userEmail) {
         html: `Voulez-vous <strong>désactiver</strong> cet utilisateur ?<br><small class="text-muted">${userEmail}</small>`,
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#dc3545', // Rouge Bootstrap
-        cancelButtonColor: '#6c757d', // Gris Bootstrap
+        confirmButtonColor: '#dc3545', 
         confirmButtonText: 'Oui, désactiver',
         cancelButtonText: 'Annuler',
-        reverseButtons: true,
-        focusCancel: true 
+        customClass: {
+            confirmButton: 'fw-bold'
+        }
     }).then((result) => {
         if (result.isConfirmed) {
-            // On soumet le formulaire de désactivation
             document.getElementById(`desac-form-${userId}`).submit();
         }
     });
@@ -142,6 +141,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const msgKey = urlParams.get('msg');
 
     const toastMessages = {
+        'created': {
+        title: 'Utilisateur créé !',
+        text: 'Le compte a été enregistré et un mail d\'activation a été envoyé.',
+        icon: 'success',
+        confirmButtonColor: '#198754'
+        },
         'rejetee': {
             title: 'Déclaration rejetée !',
             text: 'Le motif a bien été enregistré.',
@@ -303,22 +308,20 @@ function lancerRelances() {
         reverseButtons: true
     }).then((result) => {
         if (result.isConfirmed) {
-            // Affichage du loader
             Swal.fire({
                 title: 'Envoi en cours',
-                html: 'Veuillez patienter pendant le traitement...',
+                html: 'Veuillez patienter...',
                 allowOutsideClick: false,
-                didOpen: () => {
-                    Swal.showLoading()
-                }
+                didOpen: () => { Swal.showLoading() }
             });
 
-            // Appel API
-            fetch('/admin/run-reminders', { method: 'POST' })
+            // On utilise l'URL correcte de ton backend FastAPI
+            fetch('/admin/relance-retardataires', { method: 'POST' })
             .then(async response => {
                 const data = await response.json();
                 if (response.ok) {
-                    Swal.fire('Succès !', data.message, 'success');
+                    // On affiche le nombre de personnes relancées si le back le renvoie
+                    Swal.fire('Succès !', data.message || `${data.count} emails envoyés.`, 'success');
                 } else {
                     Swal.fire('Erreur', data.detail || 'Une erreur est survenue', 'error');
                 }

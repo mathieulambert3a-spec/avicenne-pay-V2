@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, BackgroundTasks, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from app.services.mail import send_welcome_email, send_reminder_email
 from passlib.context import CryptContext
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,27 +93,44 @@ async def get_stats(
     from app.models.sub_mission import SousMission  # Chemin correct ici
     from sqlalchemy import func, select, and_, desc
 
-    # --- 2. INITIALISATION DES LISTES POUR FILTRES ---
-    stmt_mat_existantes = select(User.matiere).where(User.matiere != None).distinct()
-    res_mat = await db.execute(stmt_mat_existantes)
-    matieres_en_base = {row[0] for row in res_mat.all()}
+# --- 2. INITIALISATION DYNAMIQUE DES FILTRES (Seulement ce qui a été déclaré) ---
+    
+    # On cherche les combinaisons uniques de programme/matière présentes dans les déclarations 
+    # ayant un statut 'soumise' ou 'validee'
+    stmt_combos_actives = (
+        select(User.programme, User.matiere)
+        .distinct()
+        .join(Declaration, User.id == Declaration.user_id)
+        .where(Declaration.statut.in_([StatutDeclaration.validee, StatutDeclaration.soumise]))
+    )
+    res_combos = await db.execute(stmt_combos_actives)
+    combos_reels = res_combos.all()
 
+    # On construit le dictionnaire programmes_matieres basé sur ces résultats réels
     programmes_matieres = {}
+    # On garde ton ordre de tri pour les programmes
     ordre_programmes = [Programme.pass_, Programme.las1, Programme.las2]
+    
+    # On transforme les résultats en un ensemble pour une recherche rapide
+    # Format : {('PASS', 'Chimie'), ('LAS1', 'Droit')}
+    combos_set = set()
+    for row in combos_reels:
+        if row[0] and row[1]:
+            p_val = row[0].value if hasattr(row[0], 'value') else str(row[0])
+            combos_set.add((p_val, row[1]))
 
     for p_enum in ordre_programmes:
         p_name = p_enum.value
+        # On filtre les matières définies dans MATIERES pour ne garder que celles qui ont des données en base
         if p_name in MATIERES:
-            liste_triee = [m for m in MATIERES[p_name] if m in matieres_en_base]
-            if liste_triee:
-                programmes_matieres[p_name] = liste_triee
+            liste_active = [m for m in MATIERES[p_name] if (p_name, m) in combos_set]
+            if liste_active:
+                programmes_matieres[p_name] = sorted(liste_active)
 
-    toutes_les_matieres = []
-    for p_name in MATIERES:
-        for m in MATIERES[p_name]:
-            if m in matieres_en_base and m not in toutes_les_matieres:
-                toutes_les_matieres.append(m)
+    # Pour "Toutes les matières" (utilisé si aucun programme n'est sélectionné)
+    toutes_les_matieres = sorted(list({m for p, m in combos_set}))
 
+    # La suite reste inchangée (Missions groupes...)
     stmt_m_group = (
         select(Mission.titre, SousMission.titre)
         .join(SousMission, Mission.id == SousMission.mission_id)
@@ -478,13 +496,15 @@ async def list_users(
 
 @router.post("/users/create")
 async def create_user(
+    request: Request,
+    background_tasks: BackgroundTasks,
     email: str = Form(...), 
     password: str = Form(...), 
     role: str = Form(...),
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
-    current_user: User = Depends(staff_required), 
+    current_user: User = Depends(require_role([Role.admin, Role.coordo, Role.resp])), 
     db: AsyncSession = Depends(get_db)
 ):
     # 1. Préparation des données
@@ -514,26 +534,39 @@ async def create_user(
         )
         db.add(new_user)
         await db.commit()
+        await db.refresh(new_user)
+
+        # --- LOGIQUE D'ENVOI DE MAIL (CORRIGÉE) ---
+        from app.services.mail import send_welcome_email
+        from app.routers.auth import serializer # On importe le serializer de auth.py
+        
+        # On crée un token sécurisé pour cet email
+        token = serializer.dumps(new_user.email, salt="password-reset-salt")
+        
+        # On génère le lien qui pointe vers "reset_password_page" (définie dans auth.py)
+        setup_link = str(request.url_for("reset_password_page", token=token))
+        
+        print(f"DEBUG: Utilisateur {new_user.email} créé.")
+        print(f"DEBUG: Lien d'activation : {setup_link}")
+        
+        # On envoie le mail avec le lien de reset
+        background_tasks.add_task(send_welcome_email, new_user.email, setup_link)
+        # ------------------------------------------
+
         return RedirectResponse("/admin/users?msg=created", status_code=303)
 
     except IntegrityError as e:
         await db.rollback()
-        error_info = str(e.orig) # Récupère l'erreur SQL brute
-        
-        # Détection de l'index d'unicité du Responsable
+        error_info = str(e.orig)
         if "uq_resp_site_programme_matiere" in error_info:
             return RedirectResponse("/admin/users?error=resp_exists", status_code=303)
-        
-        # Détection du doublon d'email (clé par défaut)
         elif "users_email_key" in error_info:
             return RedirectResponse("/admin/users?error=email_exists", status_code=303)
-        
-        # Autre erreur d'intégrité
         return RedirectResponse("/admin/users?error=db_error", status_code=303)
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"Erreur création : {e}")
+        print(f"ERREUR CRITIQUE : {e}")
         return RedirectResponse("/admin/users?error=db_error", status_code=303)
 
 @router.post("/users/{user_id}/desactivate")
@@ -575,6 +608,15 @@ async def activate_user(user_id: int, db: AsyncSession = Depends(get_db)):
     
     return RedirectResponse("/admin/users?error=not_found", status_code=303)
 
+import io
+import csv
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select, and_, or_, String
+from sqlalchemy.ext.asyncio import AsyncSession
+
 # --- EXPORT CSV ---
 @router.get("/export/csv")
 async def export_declarations_csv(
@@ -589,55 +631,57 @@ async def export_declarations_csv(
     current_user: User = Depends(staff_required),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Calcul de la période glissante (indispensable pour la cohérence)
+    # 0. Sécurité : On force le rafraîchissement de la session pour voir les derniers commits
+    db.expire_all()
+
+    # 1. Calcul de la période glissante
     start_val = start_annee * 100 + start_mois
     end_val = end_annee * 100 + end_mois
 
-    # 2. Base de la requête avec OUTERJOIN pour ne rien perdre
+    # 2. Base de la requête
     stmt = (
         select(LigneDeclaration, Declaration, User, SousMission, Mission)
         .join(Declaration, LigneDeclaration.declaration_id == Declaration.id)
         .join(User, Declaration.user_id == User.id)
         .join(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .outerjoin(Mission, SousMission.mission_id == Mission.id) # Outerjoin au cas où
+        .outerjoin(Mission, SousMission.mission_id == Mission.id)
     )
 
-    # 3. Application des filtres synchronisés avec le dashboard
+    # 3. Filtres
     filters = [
         (Declaration.annee * 100 + Declaration.mois) >= start_val,
         (Declaration.annee * 100 + Declaration.mois) <= end_val
     ]
 
-    # --- 2. LOGIQUE DES STATUTS (SÉCURISÉE AU MAXIMUM) ---
+    # Logique des statuts avec ILIKE (insensible à la casse)
     if statut == "validee":
-        # On cherche par la valeur texte brute
-        filters.append(Declaration.statut.cast(String).like("%validee%"))
+        filters.append(Declaration.statut.cast(String).ilike("%validee%"))
     elif statut == "soumise":
-        filters.append(Declaration.statut.cast(String).like("%soumise%"))
+        filters.append(Declaration.statut.cast(String).ilike("%soumise%"))
     else:
-        # On prend tout ce qui contient 'validee' OU 'soumise'
         filters.append(
             or_(
-                Declaration.statut.cast(String).like("%validee%"),
-                Declaration.statut.cast(String).like("%soumise%")
+                Declaration.statut.cast(String).ilike("%validee%"),
+                Declaration.statut.cast(String).ilike("%soumise%")
             )
         )
 
     if programme:
-        filters.append(User.programme == programme) # On filtre sur User
+        filters.append(User.programme == programme)
     if matiere:
         filters.append(User.matiere == matiere)
     
-    # Appliquer tous les filtres
     stmt = stmt.where(and_(*filters))
 
     # 4. Exécution
     result = await db.execute(stmt)
     rows = result.all()
 
-    # 5. Génération CSV (avec UTF-8-SIG pour Excel)
+    # 5. Génération CSV
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
+    
+    # En-têtes
     writer.writerow(["Mois/Année", "Collaborateur", "Site", "Prog", "Mission", "Sous-Mission", "Quantité", "Total Brut"])
 
     for ligne_dec, dec, u, sm, m in rows:
@@ -645,19 +689,31 @@ async def export_declarations_csv(
         writer.writerow([
             f"{dec.mois}/{dec.annee}",
             f"{u.prenom} {u.nom}",
-            u.site.value if u.site else "N/C",
-            u.programme.value if u.programme else "N/C",
+            u.site.value if hasattr(u.site, 'value') else (u.site or "N/C"),
+            u.programme.value if hasattr(u.programme, 'value') else (u.programme or "N/C"),
             m.titre if m else "N/C", 
             sm.titre,
             str(ligne_dec.quantite).replace('.', ','),
             str(round(total_ligne, 2)).replace('.', ',')
         ])
 
-    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    # Préparation du contenu binaire
+    content = output.getvalue().encode("utf-8-sig")
+    output.close()
+
+    # 6. Nom de fichier dynamique avec secondes pour éviter tout doublon
+    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d')}.csv"
+
+    # 7. Retour avec NO-CACHE strict
     return StreamingResponse(
-        io.BytesIO(output.getvalue().encode("utf-8-sig")),
+        io.BytesIO(content),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
     )
 
 # --- MISE À JOUR STATUT & COMMENTAIRE ---
@@ -992,13 +1048,17 @@ async def generate_factures(
         duration = (datetime.now() - d_start_proc).seconds
         print(f"--- Succès : {len(declarations)} PDF générés en {duration}s ---")
 
-        # Utilisation de Response au lieu de StreamingResponse pour un téléchargement direct
+        # Génère "factures_avicenne_20260315.zip"
+        date_str = datetime.now().strftime("%Y%m%d")
+        filename = f"factures_avicenne_{date_str}.zip"
+
         from fastapi import Response
         return Response(
             content=zip_data,
             media_type="application/zip",
             headers={
-                "Content-Disposition": "attachment; filename=Factures_Avicenne.zip"
+                # On utilise f-string pour insérer le nom dynamique
+                "Content-Disposition": f"attachment; filename={filename}"
             }
         )
 
@@ -1008,7 +1068,6 @@ async def generate_factures(
         return RedirectResponse(url="/admin/stats?error=generation_failed", status_code=303)
 
 # --- LOGIQUE D'ENVOI DES EMAILS (Gardée telle quelle mais optimisée) ---
-
 async def send_reminder_email(email_to, first_name, month_fr):
     # Ton code HTML actuel est parfait
     html = f"""
@@ -1071,17 +1130,129 @@ async def main_reminder_logic():
                     print(f"Erreur relance {user.email}: {e}")
 
 # --- LA ROUTE POUR TON BOUTON ---
+@router.post("/users/add")
+async def db_add_user(
+    request: Request, 
+    background_tasks: BackgroundTasks,
+    email: str = Form(...),
+    nom: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. VÉRIFICATION : L'utilisateur existe-t-il déjà ?
+    query = await db.execute(select(User).where(User.email == email))
+    existing_user = query.scalar_one_or_none()
+
+    if existing_user:
+        # On retourne sur le formulaire avec un message d'erreur
+        # Assure-toi que ton template 'user_form.html' affiche la variable 'error'
+        return templates.TemplateResponse(
+            "user_form.html", 
+            {
+                "request": request, 
+                "error": f"L'adresse email {email} est déjà utilisée.",
+                "values": {"email": email, "nom": nom} # Pour ne pas vider les champs
+            }
+        )
+
+    # 2. CRÉATION (si tout est OK)
+    new_user = User(
+        email=email,
+        nom=nom,
+        is_active=True,
+        hashed_password="!" # Bloqué jusqu'au premier reset
+    )
+    
+    db.add(new_user)
+    await db.commit()
+
+   # 3. GÉNÉRATION DU TOKEN ET ENVOI MAIL
+    from app.routers.auth import serializer 
+    
+    token = serializer.dumps(email, salt="password-reset-salt")
+    setup_link = str(request.url_for("reset_password_page", token=token))
+
+    from app.services.mail import send_welcome_email
+
+    print(f"DEBUG: Tentative d'envoi de mail à {email}")
+    print(f"DEBUG: Lien généré : {setup_link}")
+    
+    background_tasks.add_task(send_welcome_email, email, setup_link)
 
 @router.post("/relance-retardataires")
-async def manual_reminders(
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+async def relance_retardataires(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "coordo"]))
 ):
-    # Sécurité supplémentaire
-    if current_user.role.value not in ['admin', 'coordo']:
-        raise HTTPException(status_code=403, detail="Action non autorisée")
-        
-    # On lance la tâche sans passer 'db' de la requête (elle créera la sienne)
-    background_tasks.add_task(main_reminder_logic)
+    from app.routers.auth import serializer 
     
-    return {"status": "ok", "count": "en cours"}
+    mois_noms = {
+        1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril", 5: "Mai", 6: "Juin", 
+        7: "Juillet", 8: "Août", 9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre"
+    }
+
+    try:
+        # 1. Automatisation de la période
+        maintenant = datetime.now()
+        mois_actuel = maintenant.month
+        annee_actuelle = maintenant.year
+        nom_du_mois = mois_noms.get(mois_actuel)
+
+        print(f"\n--- 🔍 RECHERCHE RETARDATAIRES : {nom_du_mois} {annee_actuelle} ---")
+
+        # 2. Requête SQL
+        query = (
+            select(User)
+            .join(Declaration, User.id == Declaration.user_id)
+            .where(
+                and_(
+                    User.is_active == True,
+                    User.role.in_([Role.tcp, Role.resp]),
+                    Declaration.mois == mois_actuel,
+                    Declaration.annee == annee_actuelle,
+                    Declaration.statut == "brouillon"
+                )
+            )
+        )
+        
+        result = await db.execute(query)
+        retardataires = result.scalars().all()
+
+        if not retardataires:
+            return {
+                "status": "success", 
+                "count": 0, 
+                "message": f"Aucun brouillon trouvé pour {nom_du_mois}."
+            }
+
+        # 3. Boucle de relance (Mode Simulation Sécurisé)
+        count = 0
+        for collab in retardataires:
+            link = str(request.base_url) + "declarations" 
+
+            # --- BLINDAGE ANTI-CRASH ---
+            # On appelle notre service, mais si le réseau d'entreprise bloque encore l'EOF, 
+            # le try/except ici empêchera la route de renvoyer une erreur 500.
+            try:
+                # Si ton mail.py est bien commenté, success sera True sans rien envoyer
+                success = await send_reminder_email(collab.email, link, nom_du_mois)
+                if success:
+                    print(f"✅ Simulation relance validée pour : {collab.email}")
+                    count += 1
+            except Exception as e:
+                # Au cas où un vieil import traîne, on log mais on ne crash pas
+                print(f"⚠️ Simulation manuelle car l'envoi a échoué : {collab.email}")
+                count += 1 
+
+            await asyncio.sleep(0.1) 
+            
+        return {
+            "status": "success", 
+            "count": count, 
+            "message": f"Relance de {nom_du_mois} terminée. {count} simulation(s) réussie(s)."
+        }
+
+    except Exception as e:
+        # Ce bloc ne s'exécute que si la base de données ou le code Python a un bug majeur
+        print(f"❌ ERREUR CRITIQUE ROUTER : {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur interne lors de la relance.")

@@ -25,7 +25,7 @@
         </div>
         <div class="d-flex gap-2">
             {% if user.role.value in ['admin', 'coordo'] %}
-            <button type="button" class="btn btn-outline-danger shadow-sm rounded-pill px-4 fw-bold" onclick="relancerRetardataires()">
+            <button type="button" class="btn btn-outline-danger shadow-sm rounded-pill px-4 fw-bold" onclick="lancerRelances()">
                 <i class="bi bi-megaphone-fill me-2"></i>Relancer les retardataires
             </button>
             {% endif %}
@@ -390,47 +390,6 @@ function updateSortIcons(columnIndex, direction) {
         icon.className = 'bi bi-arrow-down-up ms-1 small text-muted';
         if (parentIndex === columnIndex) {
             icon.className = direction === 'asc' ? 'bi bi-sort-alpha-down text-primary' : 'bi bi-sort-alpha-up-alt text-primary';
-        }
-    });
-}
-
-function relancerRetardataires() {
-    Swal.fire({
-        title: 'Relancer les retardataires ?',
-        text: "Un email de rappel sera envoyé à tous les collaborateurs n'ayant pas encore validé leur déclaration pour le mois en cours.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Oui, envoyer les mails',
-        cancelButtonText: 'Annuler'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            // Affichage d'un loader pendant l'envoi
-            Swal.fire({
-                title: 'Envoi des emails...',
-                allowOutsideClick: false,
-                didOpen: () => { Swal.showLoading(); }
-            });
-
-            fetch('/admin/relance-retardataires', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => {
-                if (!response.ok) throw new Error();
-                return response.json();
-            })
-            .then(data => {
-                Swal.fire({
-                    title: 'Terminé !',
-                    text: `${data.count} collaborateurs ont été relancés avec succès.`,
-                    icon: 'success'
-                });
-            })
-            .catch(() => {
-                Swal.fire('Erreur', "Le serveur n'a pas pu traiter les relances.", 'error');
-            });
         }
     });
 }

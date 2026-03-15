@@ -65,8 +65,6 @@ async def logout():
     return response
 
 # --- ROUTES MOT DE PASSE OUBLIÉ ---
-# --- ROUTES MOT DE PASSE OUBLIÉ ---
-
 @router.get("/forgot-password", response_class=HTMLResponse)
 async def forgot_password_page(request: Request):
     return templates.TemplateResponse("forgot_password.html", {"request": request})

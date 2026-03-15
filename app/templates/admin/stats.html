@@ -436,8 +436,7 @@
         }
     })();
 
-    // LOGIQUE FILTRES
-    // LOGIQUE FILTRES ET EXPORT
+// LOGIQUE FILTRES ET EXPORT
 document.addEventListener('DOMContentLoaded', function() {
     const filterForm = document.querySelector('form[action="/admin/stats"]');
     const exportBtn = document.getElementById('export-csv-btn');
@@ -448,24 +447,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const bridge = document.getElementById('data-bridge');
 
     function updateExportUrl() {
-    const filterForm = document.querySelector('form[action="/admin/stats"]');
-    const exportBtn = document.getElementById('export-csv-btn');
-    if (!exportBtn || !filterForm) return;
+        const filterForm = document.querySelector('form[action="/admin/stats"]');
+        const exportBtn = document.getElementById('export-csv-btn');
+        if (!exportBtn || !filterForm) return;
 
-    const formData = new FormData(filterForm);
-    const params = new URLSearchParams();
+        const formData = new FormData(filterForm);
+        const params = new URLSearchParams();
 
-    // On envoie TOUS les filtres pour que l'export soit identique au visuel
-    params.append('start_mois', formData.get('start_mois'));
-    params.append('start_annee', formData.get('start_annee'));
-    params.append('end_mois', formData.get('end_mois'));
-    params.append('end_annee', formData.get('end_annee'));
-    
-    if (formData.get('statut')) params.append('statut', formData.get('statut'));
-    if (formData.get('programme')) params.append('programme', formData.get('programme'));
-    if (formData.get('matiere')) params.append('matiere', formData.get('matiere'));
+        // 1. Sécurité anti-cache (indispensable)
+        params.append('t', new Date().getTime());
 
-    exportBtn.href = "/admin/stats/export-csv?" + params.toString();
+        // 2. Récupération des filtres
+        params.append('start_mois', formData.get('start_mois'));
+        params.append('start_annee', formData.get('start_annee'));
+        params.append('end_mois', formData.get('end_mois'));
+        params.append('end_annee', formData.get('end_annee'));
+        
+        if (formData.get('statut')) params.append('statut', formData.get('statut'));
+        if (formData.get('programme')) params.append('programme', formData.get('programme'));
+        if (formData.get('matiere')) params.append('matiere', formData.get('matiere'));
+
+        // 3. L'URL EXACTE qui correspond à votre FastAPI
+        // Préfixe (/admin) + Route (/export/csv)
+        exportBtn.href = "/admin/export/csv?" + params.toString();
     }
 
     if (bridge && progSelect && matSelect) {
