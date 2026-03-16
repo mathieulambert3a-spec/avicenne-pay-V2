@@ -147,8 +147,7 @@
 
         <div class="document-meta">
             <span class="doc-type">Facture</span>
-            <span class="doc-date">Référence : {{ date_gen|replace('/', '') }}-{{ u.nom|upper|truncate(3, True, '') }}</span>
-        </div>
+           <span class="doc-date">Référence : {{ num_facture }}</span>
 
         <div class="content-section">
             <div class="table-head">Description de la prestation</div>

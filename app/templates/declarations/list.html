@@ -256,16 +256,16 @@
                             </a>
                             {% endif %}
 
+                            {# --- BLOC MODIFIÉ ICI --- #}
                             {% if status_val == 'soumise' and user.role.value in ['admin', 'coordo'] and decl.user_id != user.id %}
-                            <form action="/declarations/{{ decl.id }}/valider" method="post" class="d-inline">
-                                <button type="submit" class="btn btn-white text-success" title="Valider">
-                                    <i class="bi bi-check-lg"></i>
+                                {# On a supprimé le bouton "Valider" (form /valider) #}
+                                
+                                {# On garde le bouton Rejeter car il nécessite une saisie de motif #}
+                                <button type="button" class="btn btn-white text-warning" title="Rejeter" onclick="rejeterDeclaration('{{ decl.id }}')">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
                                 </button>
-                            </form>
-                            <button type="button" class="btn btn-white text-warning" title="Rejeter" onclick="rejeterDeclaration('{{ decl.id }}')">
-                                <i class="bi bi-arrow-counterclockwise"></i>
-                            </button>
                             {% endif %}
+                            {# --- FIN DU BLOC MODIFIÉ --- #}
 
                             {% if user.role.value == 'admin' %}
                             <form action="/declarations/{{ decl.id }}/delete" method="post" class="d-inline" 

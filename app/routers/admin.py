@@ -344,109 +344,6 @@ async def get_stats(
         }
     )
 
-# --- EXPORT STATS ---
-@router.get("/stats/export-csv")
-async def export_stats_csv(
-    start_mois: int = Query(1),
-    start_annee: int = Query(2025),
-    end_mois: int = Query(12),
-    end_annee: int = Query(2026),
-    programme: Optional[str] = Query(None),
-    matiere: Optional[str] = Query(None),
-    statut: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(Role.admin))
-):
-    # 1. Calcul de la période
-    start_val = start_annee * 100 + start_mois
-    end_val = end_annee * 100 + end_mois
-
-    # 2. Construction des filtres
-    filters = [
-        (Declaration.annee * 100 + Declaration.mois) >= start_val,
-        (Declaration.annee * 100 + Declaration.mois) <= end_val
-    ]
-
-    # LOGIQUE DE STATUT ULTRA-FIABLE (Comparaison textuelle)
-    if statut == "validee":
-        filters.append(Declaration.statut == "validee")
-    elif statut == "soumise":
-        filters.append(Declaration.statut == "soumise")
-    else:
-        # "Soumise & Validée" : Tout sauf ce qui contient 'brouillon'
-        # On utilise cast pour être certain que la base de données compare du texte
-        filters.append(Declaration.statut.cast(String) != "brouillon")
-
-    if programme and programme.strip():
-        filters.append(Declaration.programme == programme)
-
-    # 3. La Requête avec OUTERJOIN (Pour ne perdre aucune ligne validée)
-    stmt = (
-        select(
-            User.nom, 
-            User.prenom, 
-            User.matiere,
-            Declaration.site,
-            Declaration.statut,
-            Declaration.annee, 
-            Declaration.mois,
-            Declaration.programme,
-            func.coalesce(Mission.titre, "Mission Inconnue").label("m_titre"), 
-            func.coalesce(SousMission.titre, "Sous-mission Inconnue").label("sm_titre"),
-            LigneDeclaration.quantite,
-            SousMission.unite, 
-            func.coalesce(SousMission.tarif, 0).label("tarif_unit"),
-            (LigneDeclaration.quantite * func.coalesce(SousMission.tarif, 0)).label("total_ligne")
-        )
-        .select_from(Declaration)
-        .outerjoin(User, Declaration.user_id == User.id)
-        .outerjoin(LigneDeclaration, Declaration.id == LigneDeclaration.declaration_id)
-        .outerjoin(SousMission, LigneDeclaration.sous_mission_id == SousMission.id)
-        .outerjoin(Mission, SousMission.mission_id == Mission.id)
-        .where(and_(*filters))
-        .order_by(Declaration.annee.desc(), Declaration.mois.desc(), User.nom)
-    )
-
-    result = await db.execute(stmt)
-    rows = result.all()
-
-    # 4. Génération du CSV
-    output = StringIO()
-    writer = csv.writer(output, delimiter=';')
-    # En-tête (13 colonnes)
-    writer.writerow(["Nom", "Prénom", "Site", "Statut", "Mois", "Année", "Prog", "Matière", "Mission", "Sous-Mission", "Qté", "Unité", "Tarif", "Total"])
-
-    for r in rows:
-        # Conversion sécurisée des Enums (Statut, Site, Programme)
-        s_text = r.statut.value if hasattr(r.statut, 'value') else str(r.statut)
-        site_text = r.site.value if hasattr(r.site, 'value') else str(r.site)
-        prog_text = r.programme.value if hasattr(r.programme, 'value') else str(r.programme)
-
-        writer.writerow([
-            r.nom or "N/A", 
-            r.prenom or "N/A", 
-            site_text, 
-            s_text, 
-            r.mois, 
-            r.annee, 
-            prog_text,
-            r.matiere or "N/A",
-            r.m_titre, 
-            r.sm_titre,
-            str(r.quantite).replace('.', ','), 
-            r.unite or "unité",
-            str(r.tarif_unit).replace('.', ','), 
-            str(round(r.total_ligne, 2)).replace('.', ',')
-        ])
-
-    # BOM UTF-8 pour Excel et retour du flux
-    content = "\ufeff" + output.getvalue()
-    return StreamingResponse(
-        iter([content]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=export_stats.csv"}
-    )
-
 # --- GESTION DES UTILISATEURS ---
 @router.get("/users", response_class=HTMLResponse)
 async def list_users(
@@ -608,16 +505,7 @@ async def activate_user(user_id: int, db: AsyncSession = Depends(get_db)):
     
     return RedirectResponse("/admin/users?error=not_found", status_code=303)
 
-import io
-import csv
-from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy import select, and_, or_, String
-from sqlalchemy.ext.asyncio import AsyncSession
-
-# --- EXPORT CSV ---
+# --- EXPORT CSV (Version attachée à stats.html) ---
 @router.get("/export/csv")
 async def export_declarations_csv(
     start_mois: int = Query(1),
@@ -631,7 +519,7 @@ async def export_declarations_csv(
     current_user: User = Depends(staff_required),
     db: AsyncSession = Depends(get_db),
 ):
-    # 0. Sécurité : On force le rafraîchissement de la session pour voir les derniers commits
+    # 0. Sécurité : On force le rafraîchissement de la session
     db.expire_all()
 
     # 1. Calcul de la période glissante
@@ -653,7 +541,6 @@ async def export_declarations_csv(
         (Declaration.annee * 100 + Declaration.mois) <= end_val
     ]
 
-    # Logique des statuts avec ILIKE (insensible à la casse)
     if statut == "validee":
         filters.append(Declaration.statut.cast(String).ilike("%validee%"))
     elif statut == "soumise":
@@ -681,28 +568,53 @@ async def export_declarations_csv(
     output = io.StringIO()
     writer = csv.writer(output, delimiter=';')
     
-    # En-têtes
-    writer.writerow(["Mois/Année", "Collaborateur", "Site", "Prog", "Mission", "Sous-Mission", "Quantité", "Total Brut"])
+    # --- EN-TÊTE CORRIGÉ (Ajout Réf Facture en position 0) ---
+    writer.writerow([
+        "Réf Facture", 
+        "Mois/Année", 
+        "Collaborateur", 
+        "Site", 
+        "Prog", 
+        "Matière", 
+        "Mission", 
+        "Sous-Mission", 
+        "Quantité", 
+        "Total Brut"
+    ])
+
+    # Date fixe pour le calcul du numéro de facture (Aujourd'hui)
+    date_ref_str = datetime.now().strftime("%d%m%Y")
 
     for ligne_dec, dec, u, sm, m in rows:
+        # Calcul du numéro de facture (Identique au PDF)
+        nom_brut = u.nom or "INC"
+        num_facture = f"{date_ref_str}-{nom_brut.upper()[:4]}"
+        
         total_ligne = ligne_dec.quantite * sm.tarif
+        
+        # Récupération de la matière
+        matiere_val = u.matiere.value if hasattr(u.matiere, 'value') else (u.matiere or "N/C")
+
+        # --- ÉCRITURE DE LA LIGNE (Synchronisée avec l'en-tête) ---
         writer.writerow([
-            f"{dec.mois}/{dec.annee}",
-            f"{u.prenom} {u.nom}",
+            num_facture,                # 1. Réf Facture
+            f"{dec.mois}/{dec.annee}",  # 2. Mois/Année
+            f"{u.prenom} {u.nom}",      # 3. Collaborateur
             u.site.value if hasattr(u.site, 'value') else (u.site or "N/C"),
             u.programme.value if hasattr(u.programme, 'value') else (u.programme or "N/C"),
+            matiere_val,                # 6. Matière
             m.titre if m else "N/C", 
             sm.titre,
             str(ligne_dec.quantite).replace('.', ','),
             str(round(total_ligne, 2)).replace('.', ',')
         ])
 
-    # Préparation du contenu binaire
+    # Préparation du contenu binaire avec BOM (utf-8-sig) pour Excel
     content = output.getvalue().encode("utf-8-sig")
     output.close()
 
-    # 6. Nom de fichier dynamique avec secondes pour éviter tout doublon
-    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d')}.csv"
+    # 6. Nom de fichier dynamique avec timestamp pour éviter le cache
+    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
     # 7. Retour avec NO-CACHE strict
     return StreamingResponse(
@@ -999,17 +911,27 @@ async def generate_factures(
         if not declarations:
             return RedirectResponse(url="/admin/stats?error=no_data", status_code=303)
 
-        # 2. Préparation de la liste (Dictionnaires simples)
+        # 2. Préparation de la liste
         data_list = []
+        # On fixe la date de génération une seule fois pour tout le lot
+        now = datetime.now()
+        date_gen_str = now.strftime("%d/%m/%Y")
+        date_ref_str = now.strftime("%d%m%Y") # Format 16032026 pour la réf
+
         for dec in declarations:
             u = dec.user
             
-            # --- CORRECTION ICI : u.nss_encrypted au lieu de u.nss ---
+            # 1. Calcul du numéro de facture (Identique à ton HTML)
+            nom_majuscule = (u.nom or "INC").upper()
+            # On prend les 3 premières lettres (truncate 3)
+            nom_court = nom_majuscule[:4]
+            num_facture = f"{date_ref_str}-{nom_court}"
+
+            # 2. Décryptage NSS
             try:
                 nss_clair = decrypt(u.nss_encrypted, f_cipher) if u.nss_encrypted else "Non renseigné"
             except Exception:
-                nss_clair = u.nss_encrypted if u.nss_encrypted else "Erreur"
-            # -------------------------------------------------------
+                nss_clair = "Erreur"
 
             prog = u.programme.value if u.programme else "Programme"
             mat = u.matiere if u.matiere else "Matière"
@@ -1017,11 +939,13 @@ async def generate_factures(
             data_list.append({
                 "u": u,
                 "nss": nss_clair,
+                "num_facture": num_facture,
                 "total": sum(l.quantite * l.sous_mission.tarif for l in dec.lignes),
                 "nature_facture": f"{prog}: {mat}",
                 "dec": dec,
-                "date_gen": datetime.now().strftime("%d/%m/%Y"),
-                "filename": f"Facture_{u.nom}_{dec.mois}_{dec.annee}.pdf"
+                "date_gen": date_gen_str,
+                # Le nom du fichier devient aussi plus clair
+                "filename": f"Facture_{num_facture}_{u.nom}.pdf"
             })
         
         # --- ÉTAPE 3 : LE TURBO (PARALLÈLE) ---

@@ -73,13 +73,12 @@
             </div>
         </div>
 
-        {# --- LISTE DES MISSIONS --- #}
+{# --- LISTE DES MISSIONS --- #}
         {% for mission in missions %}
             {% set active_sms = mission.sous_missions | selectattr('is_active') | list %}
             
             {% if active_sms %}
                 {# --- LOGIQUE DE DÉTECTION DU RÔLE --- #}
-                {# On convertit le rôle en chaîne et en minuscule pour être sûr #}
                 {% set user_role_raw = user.role | string | lower %}
                 {% set is_resp = 'resp' in user_role_raw %}
 
@@ -102,16 +101,21 @@
                                             </td>
                                             <td style="width:160px">{{ "%.2f"|format(sm.tarif) }} €</td>
                                             <td style="width:220px">
-                                                {# Input caché pour envoyer 1 au serveur #}
-                                                <input type="hidden" name="quantite_{{ sm.id }}" value="1">
+                                                <input type="hidden" name="quantite_{{ sm.id }}" 
+                                                       class="quantite-input" 
+                                                       data-tarif="{{ sm.tarif }}" 
+                                                       data-smid="{{ sm.id }}" 
+                                                       value="1">
                                                 <div class="input-group shadow-sm">
                                                     <input type="text" class="form-control text-center fw-bold bg-light text-muted" value="1" disabled>
                                                     <span class="input-group-text bg-light small" style="min-width: 80px;">
                                                         <i class="bi bi-lock-fill text-warning"></i>
-                                                    </td>
-                                                <td class="text-end pe-4 fw-bold" style="width:160px">
-                                                    <span class="text-primary">{{ "%.2f"|format(sm.tarif) }} €</span>
-                                                </td>
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td class="text-end pe-4 fw-bold" style="width:160px">
+                                                <span class="text-primary" id="montant_{{ sm.id }}">{{ "%.2f"|format(sm.tarif) }} €</span>
+                                            </td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -121,7 +125,7 @@
                     {% endif %}
 
                 {% else %}
-                    {# --- BLOC MISSION NORMALE --- #}
+                    {# --- BLOC MISSION NORMALE (HORS RESPONSABLE) --- #}
                     <div class="card mb-4 border-0 shadow-sm overflow-hidden">
                         <div class="card-header bg-light border-bottom py-3">
                             <span class="fw-bold text-dark"><i class="bi bi-folder2-open me-2 text-primary"></i>{{ mission.titre }}</span>

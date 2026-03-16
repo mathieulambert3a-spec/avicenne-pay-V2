@@ -268,28 +268,34 @@ async def create_declaration(
             except (ValueError, IndexError):
                 continue
 
-    # 6. GESTION DE L'ACTION
-    msg = "created" # Message par défaut pour le brouillon
+            # 6. GESTION DE L'ACTION
+            msg = "declaration_created" 
 
-    if action == "soumettre":
-        from datetime import date
-        aujourdhui = date.today()
-        date_ouverture = date(annee, mois, 1)
+            if action == "soumettre":
+                from datetime import date
+                aujourdhui = date.today()
+                date_ouverture = date(annee, mois, 1)
 
-        if aujourdhui < date_ouverture:
-            # On force le mode brouillon car il est trop tôt
-            action = "brouillon"
-            msg = "saved_as_draft_early"
-            # Note : new_dec.statut est déjà StatutDeclaration.brouillon par défaut
-        else:
-            # OK : On passe en soumise
-            new_dec.statut = StatutDeclaration.soumise
-            new_dec.soumise_le = datetime.now()
-            msg = "submitted"
+                if aujourdhui < date_ouverture:
+                    # On force le mode brouillon car il est trop tôt
+                    action = "brouillon"
+                    msg = "saved_as_draft_early"
+                    # Note : new_dec.statut est déjà StatutDeclaration.brouillon par défaut
+                else:
+                    # OK : On passe en soumise
+                    new_dec.statut = StatutDeclaration.soumise
+                    new_dec.soumise_le = datetime.now()
+                    msg = "submitted"
 
-    # 7. FINALISATION
-    await db.commit()
-    return RedirectResponse(f"/declarations?msg={msg}", status_code=303)
+            # 7. FINALISATION
+            await db.commit()
+            await db.refresh(new_dec)
+
+            # On construit l'URL proprement
+            target_url = f"/declarations/{new_dec.id}?msg={msg}"
+            print(f"DEBUG: Redirection vers {target_url}")
+
+            return RedirectResponse(url=target_url, status_code=303)
 
 # --- DÉTAIL D'UNE DÉCLARATION ---
 @router.get("/{decl_id}", response_class=HTMLResponse)
@@ -337,20 +343,36 @@ async def valider_declaration(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # 1. Vérification du rôle global
     if current_user.role not in (Role.admin, Role.coordo):
-        return RedirectResponse("/declarations?error=non_autorise", status_code=302)
+        return RedirectResponse("/declarations?error=non_autorise", status_code=303)
 
-    result = await db.execute(select(Declaration).options(selectinload(Declaration.user)).where(Declaration.id == decl_id))
+    # 2. Récupération de la déclaration avec son utilisateur
+    result = await db.execute(
+        select(Declaration)
+        .options(selectinload(Declaration.user))
+        .where(Declaration.id == decl_id)
+    )
     declaration = result.scalar_one_or_none()
 
-    if declaration and declaration.statut == StatutDeclaration.soumise:
-        if current_user.role == Role.coordo and declaration.user.site != current_user.site:
-             return RedirectResponse("/declarations?error=hors_perimetre", status_code=302)
-        
-        declaration.statut = StatutDeclaration.validee
-        await db.commit()
-    
-    return RedirectResponse(request.headers.get("referer", "/declarations"), status_code=302)
+    # 3. Vérification de l'existence et du statut
+    if not declaration:
+        return RedirectResponse("/declarations?error=introuvable", status_code=303)
+
+    if declaration.statut != StatutDeclaration.soumise:
+        # Si déjà validée ou encore en brouillon, on redirige simplement vers le détail
+        return RedirectResponse(f"/declarations/{decl_id}", status_code=303)
+
+    # 4. Vérification du périmètre pour les coordinateurs
+    if current_user.role == Role.coordo and declaration.user.site != current_user.site:
+         return RedirectResponse("/declarations?error=hors_perimetre", status_code=303)
+
+    # 5. Validation et enregistrement
+    declaration.statut = StatutDeclaration.validee
+    await db.commit()
+
+    # 6. Redirection avec le paramètre de succès pour main.js
+    return RedirectResponse(url=f"/declarations/{decl_id}?msg=validee", status_code=303)
 
 @router.post("/{decl_id}/rejeter")
 async def rejeter_declaration(

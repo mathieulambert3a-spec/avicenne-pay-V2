@@ -136,6 +136,29 @@ function confirmDesactivation(userId, userEmail) {
     });
 }
 
+// Fonction pour la Validation finale (Soumise -> Validée)
+function confirmValidate(button) {
+    const form = button.closest('form');
+    
+    Swal.fire({
+        title: "Valider la déclaration ?",
+        text: "Cette action confirmera les montants pour la mise en paie.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#198754", // Vert succès
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Oui, valider",
+        cancelButtonText: "Annuler",
+        customClass: {
+            confirmButton: 'fw-bold'
+        }
+    }).then((result) => {
+        if (result.isConfirmed && form) {
+            form.submit();
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const msgKey = urlParams.get('msg');
@@ -147,6 +170,12 @@ document.addEventListener('DOMContentLoaded', () => {
         icon: 'success',
         confirmButtonColor: '#198754'
         },
+        'declaration_created': { // TA NOUVELLE CLÉ ICI
+        title: 'Déclaration enregistrée !',
+        text: 'Votre brouillon a été créé avec succès.',
+        icon: 'success',
+        confirmButtonColor: '#198754'
+        }, 
         'rejetee': {
             title: 'Déclaration rejetée !',
             text: 'Le motif a bien été enregistré.',
@@ -166,6 +195,12 @@ document.addEventListener('DOMContentLoaded', () => {
             title: 'Supprimé !',
             text: "L'élément a bien été retiré du référentiel.",
             icon: 'success'
+        },
+        'validee': {
+            title: 'Déclaration validée !',
+            text: 'Elle est désormais verrouillée pour la paie.',
+            icon: 'success',
+            confirmButtonColor: '#198754'
         },
         'saved_as_draft_early': {
             title: 'Soumission impossible',
