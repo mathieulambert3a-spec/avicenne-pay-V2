@@ -614,7 +614,7 @@ async def export_declarations_csv(
     output.close()
 
     # 6. Nom de fichier dynamique avec timestamp pour éviter le cache
-    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"export_avicenne_{datetime.now().strftime('%Y%m%d')}.csv"
 
     # 7. Retour avec NO-CACHE strict
     return StreamingResponse(

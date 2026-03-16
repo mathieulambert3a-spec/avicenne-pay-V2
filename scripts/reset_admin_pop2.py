@@ -114,13 +114,28 @@ async def reset_and_seed():
         random.shuffle(all_new_users)
         
         for idx, user in enumerate(all_new_users):
-            # 4 validées, les 10 autres en brouillon
-            statut = StatutDeclaration.validee if idx < 4 else StatutDeclaration.brouillon
+            # RÉPARTITION DES STATUTS :
+            # idx 0-3 : Validées (4)
+            # idx 4-7 : Soumises (4)
+            # idx 8-13 : Brouillons (6)
+            if idx < 4:
+                statut = StatutDeclaration.validee
+            elif idx < 8:
+                statut = StatutDeclaration.soumise
+            else:
+                statut = StatutDeclaration.brouillon
             
+            # Une déclaration soumise ou validée doit avoir une date de soumission
+            date_soumission = datetime.now() if statut in [StatutDeclaration.soumise, StatutDeclaration.validee] else None
+
             decl = Declaration(
-                user_id=user.id, site=user.site, programme=user.programme,
-                mois=3, annee=2026, statut=statut,
-                soumise_le=datetime.now() if statut == StatutDeclaration.validee else None
+                user_id=user.id, 
+                site=user.site, 
+                programme=user.programme,
+                mois=3, 
+                annee=2026, 
+                statut=statut,
+                soumise_le=date_soumission
             )
             db.add(decl)
             await db.flush()
@@ -131,14 +146,15 @@ async def reset_and_seed():
             
             for sub in chosen_subs:
                 db.add(LigneDeclaration(
-                    declaration_id=decl.id, sous_mission_id=sub.id,
+                    declaration_id=decl.id, 
+                    sous_mission_id=sub.id,
                     quantite=float(random.randint(2, 10))
                 ))
 
         await db.commit()
         print(f"✅ Succès ! {len(all_new_users) + 2} utilisateurs créés au total.")
         print(f"🔑 Login Admin : admin@avicenne.fr / {PASSWORD_RAW}")
-        print(f"🚀 14 déclarations injectées pour Mars (4 validées).")
+        print(f"🚀 14 déclarations injectées : 4 validées, 4 soumises, 6 brouillons.")
 
 if __name__ == "__main__":
     asyncio.run(reset_and_seed())

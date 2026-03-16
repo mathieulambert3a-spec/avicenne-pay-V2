@@ -130,8 +130,20 @@
             <div class="vendor-info">
                 <div class="vendor-name">{{ u.prenom }} {{ u.nom|upper }}</div>
                 <div class="vendor-details">
-                    N° Sécurité Sociale : {{ nss }}<br>
-                    Date d'émission : {{ date_gen }}
+                    <div style="margin-bottom: 8px;">
+                        {{ u.adresse }}<br>
+                        {{ u.code_postal }} {{ u.ville }}
+                    </div>
+
+                    <div style="margin-bottom: 8px;">
+                        {{ u.email }}<br>
+                        {{ u.telephone or '' }}
+                    </div>
+
+                    <div style="border-top: 1px solid #f1f2f6; padding-top: 8px; margin-top: 8px;">
+                        N° Sécurité Sociale : {{ nss }}<br>
+                        Date d'émission : {{ date_gen }}
+                    </div>
                 </div>
             </div>
             
