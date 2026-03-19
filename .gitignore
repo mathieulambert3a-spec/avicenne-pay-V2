@@ -16,3 +16,8 @@ data/*
 # VS Code (versionner seulement settings.json si tu veux)
 .vscode/*
 !.vscode/settings.json
+
+# Sécurité & Environnement
+.env
+.env.local
+.env.*
