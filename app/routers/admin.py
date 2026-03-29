@@ -356,6 +356,9 @@ async def create_user(
     background_tasks: BackgroundTasks,
     email: str = Form(...), 
     password: str = Form(...), 
+    nom: str = Form(...),                  # AJOUTÉ : Requis pour l'identité
+    prenom: str = Form(...),               # AJOUTÉ : Requis pour l'identité
+    telephone: Optional[str] = Form(None),    # AJOUTÉ : Optionnel
     role: str = Form(...),
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
@@ -371,11 +374,11 @@ async def create_user(
         final_role, final_site, final_prog, final_matiere = None, None, None, None
 
         # --- 1. LOGIQUE DE HIÉRARCHIE ET SÉCURITÉ ---
-        
+        manager_id = None  # Par défaut
+
         if current_user.role == Role.admin:
             final_role = requested_role
             final_site = Site(site) if site else None
-            # Force None pour les rôles COM-centric (pas de matière/prog)
             if requested_role in [Role.com, Role.top_com]:
                 final_prog, final_matiere = None, None
             else:
@@ -383,13 +386,10 @@ async def create_user(
                 final_matiere = matiere
 
         elif current_user.role == Role.coordo:
-            # Le Coordo peut créer TOUT SAUF un Admin ou un autre Coordo sur son site
             if requested_role in [Role.admin, Role.coordo]:
                 return RedirectResponse("/admin/users?error=unauthorized_role", status_code=303)
-            
             final_role = requested_role
-            final_site = current_user.site # Force son site
-            
+            final_site = current_user.site
             if requested_role in [Role.com, Role.top_com]:
                 final_prog, final_matiere = None, None
             else:
@@ -397,32 +397,48 @@ async def create_user(
                 final_matiere = matiere
 
         elif current_user.role == Role.top_com:
-            # Le TOP COM ne peut créer QUE des COM
             if requested_role != Role.com:
                 return RedirectResponse("/admin/users?error=unauthorized_role", status_code=303)
-            
             final_role = Role.com
-            final_site = current_user.site # Force son site
-            final_prog, final_matiere = None, None # Pas de périmètre pour les COM
+            final_site = current_user.site
+            final_prog, final_matiere = None, None
 
         elif current_user.role == Role.resp:
-            # Le RESP ne peut créer que des TCP sur son propre périmètre
+            # Le RESP ne crée que des TCP
             final_role = Role.tcp
             final_site = current_user.site
             final_prog = current_user.programme
             final_matiere = current_user.matiere
-        
-        else:
-            return RedirectResponse("/admin/users?error=unauthorized", status_code=303)
+            manager_id = current_user.id # Le RESP est le manager du TCP
 
-        # --- 2. CRÉATION EN BASE ---
+        elif current_user.role == Role.tcp:
+            # Le TCP ne peut créer que des TOP sur son périmètre
+            final_role = Role.top
+            final_site = current_user.site
+            final_prog = current_user.programme
+            final_matiere = current_user.matiere
+            manager_id = current_user.id # Le TCP est le manager du TOP
+
+        elif current_user.role == Role.top:
+            # Le TOP ne peut créer que des Parrains/Marraines
+            final_role = Role.parrain_marraine
+            final_site = current_user.site
+            final_prog = current_user.programme
+            final_matiere = current_user.matiere
+            manager_id = current_user.id # Le TOP est le manager du Parrain
+
+        # --- 2. CRÉATION EN BASE (AVEC IDENTITÉ) ---
         new_user = User(
             email=email.lower().strip(),
+            nom=nom.strip().upper(),             # AJOUTÉ
+            prenom=prenom.strip().capitalize(),    # AJOUTÉ
+            telephone=telephone.strip() if telephone else None, # AJOUTÉ
             hashed_password=pwd_context.hash(password), 
             role=final_role,
             site=final_site,
             programme=final_prog,
             matiere=final_matiere,
+            manager_id=manager_id,
             is_active=True
         )
         
@@ -446,7 +462,6 @@ async def create_user(
     except IntegrityError as e:
         await db.rollback()
         error_info = str(e.orig).lower()
-        # Gestion des contraintes d'unicité (Ex: 1 seul TOP COM par site)
         if "uq_top_com_site" in error_info:
             return RedirectResponse("/admin/users?error=top_com_exists", status_code=303)
         if "uq_resp_site_programme_matiere" in error_info:
@@ -742,19 +757,17 @@ async def edit_user_form(
     if not user_to_edit:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
     
-    # Préparation des Enums pour le template
+    # Préparation des Enums pour le template (on garde les objets pour Jinja)
     clean_matieres = {str(k): v for k, v in MATIERES.items()}
 
     return templates.TemplateResponse("admin/user_form.html", {
-    "request": request,
-    "u": user_to_edit,
-    "current_user": current_admin,
-    "roles": [r.value for r in Role],
-    "sites": [s.value for s in Site],
-    "programmes": [p.value for p in Programme],
-    "filieres": [f.value for f in Filiere],
-    "annees": [a.value for a in Annee],
-    "matieres_par_prog": clean_matieres
+        "request": request,
+        "u": user_to_edit,
+        "current_user": current_admin,
+        "roles": Role, # On passe l'Enum entier pour itérer proprement
+        "sites": Site,
+        "programmes": Programme,
+        "matieres_par_prog": clean_matieres
     })
 
 @router.post("/users/{user_id}/edit")
@@ -762,17 +775,16 @@ async def edit_user_save(
     user_id: int,
     db: AsyncSession = Depends(get_db), 
     admin: User = Depends(user_editor),
+    nom: Optional[str] = Form(None),       
+    prenom: Optional[str] = Form(None),    
+    telephone: Optional[str] = Form(None),
     role: str = Form(...),
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
     password: Optional[str] = Form(None)
 ):
-    # --- SÉCURITÉ SUPPLÉMENTAIRE ---
-    # On bloque l'accès si l'utilisateur connecté n'est ni ADMIN ni COORDO
-    # Cela protège contre les requêtes POST manuelles (ex: via Postman ou console JS)
     if admin.role.value not in ["admin", "coordo"]:
-        logger.warning(f"Tentative de modification non autorisée par l'utilisateur ID {admin.id}")
         return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=unauthorized", status_code=303)
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -782,22 +794,34 @@ async def edit_user_save(
         return RedirectResponse(url="/admin/users?error=notfound", status_code=303)
 
     try:
+        # 1. MISE À JOUR DE L'IDENTITÉ
+        if nom: u.nom = nom.strip()
+        if prenom: u.prenom = prenom.strip()
+        if telephone: u.telephone = telephone.strip()
+
         requested_role = Role(role)
         u.role = requested_role
         
-        # 1. Gestion du Site (Tout le monde sauf Admin)
+        # 2. Gestion du Site
+        # On garde le site pour tout le monde sauf les Admins globaux (si c'est ta logique)
         u.site = Site(site) if site and site.strip() and requested_role != Role.admin else None
 
-        # 2. Gestion du Périmètre Pédagogique (Uniquement RESP et TCP)
-        if requested_role in [Role.resp, Role.tcp]:
+        # 3. Gestion du Périmètre Pédagogique (CORRIGÉ ICI)
+        # On ajoute Role.parrain_marraine et Role.top à la liste de ceux qui peuvent avoir un programme
+        if requested_role in [Role.resp, Role.tcp, Role.top, Role.parrain_marraine]:
             u.programme = Programme(programme) if programme and programme.strip() else None
-            u.matiere = matiere if matiere and matiere.strip() else None
+            
+            # La matière, par contre, n'est généralement utile que pour RESP et TCP
+            if requested_role in [Role.resp, Role.tcp]:
+                u.matiere = matiere if matiere and matiere.strip() else None
+            else:
+                u.matiere = None
         else:
-            # On nettoie pour les rôles COM, TOP, COORDO et ADMIN
+            # Pour les COM, COORDO, ADMIN, on nettoie tout
             u.programme = None
             u.matiere = None
 
-        # 3. Mot de passe
+        # 4. Mot de passe
         if password and len(password.strip()) >= 8:
             u.hashed_password = pwd_context.hash(password)
 
@@ -807,9 +831,6 @@ async def edit_user_save(
     except IntegrityError as e:
         await db.rollback()
         error_info = str(e.orig).lower()
-        
-        # Identification précise de la contrainte SQL
-        # Adapté pour correspondre aux codes d'erreur renvoyés par tes redirections
         if "uq_top_com_site" in error_info:
             return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=top_com_exists", status_code=303)
         elif "uq_resp_site_programme_matiere" in error_info:

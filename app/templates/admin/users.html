@@ -156,11 +156,29 @@
                             <option value="tcp">TCP</option>
                         {% elif u_role == "top_com" %}
                             <option value="com">COM</option>
+                        {% elif u_role == "top" %}
+                            <option value="parrain_marraine">Parrain / Marraine</option>
                         {% else %}
                             <option value="tcp" selected>TCP</option>
                         {% endif %}
                     </select>
-                </div>            
+                </div>
+
+                {# --- SECTION IDENTITÉ (FIXE) --- #}
+                <div class="col-md-2" id="container-nom">
+                    <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Nom</label>
+                    <input type="text" name="nom" id="input-nom" class="form-control shadow-sm" placeholder="NOM" required>
+                </div>
+
+                <div class="col-md-2" id="container-prenom">
+                    <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Prénom</label>
+                    <input type="text" name="prenom" id="input-prenom" class="form-control shadow-sm" placeholder="Prénom" required>
+                </div>
+
+                <div class="col-md-2" id="container-tel">
+                    <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Téléphone</label>
+                    <input type="tel" name="telephone" id="input-tel" class="form-control shadow-sm" placeholder="06XXXXXXXX">
+                </div>
                 <div class="col-md-2" id="container-site">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Site</label>
                     
@@ -168,20 +186,19 @@
                         <select name="site" id="siteSelect" class="form-select shadow-sm">
                             <option value="">--</option>
                             {% for s in sites %}
-                                {# On compare l'objet ou la valeur pour la présélection #}
                                 <option value="{{ s.value }}" {% if user.site == s %}selected{% endif %}>
                                     {{ s.value.replace('_', ' ').title() }}
                                 </option>
                             {% endfor %}
                         </select>
                     {% else %}
-                        {# Affichage en texte simple pour les non-admins #}
                         <div class="p-2 bg-white rounded border small shadow-sm text-truncate">
                             {{ user.site.value.replace('_', ' ').title() if user.site else 'N/A' }}
                         </div>
                         <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
                     {% endif %}
                 </div>
+
                 <div id="container-perimetre" class="col-md-3">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Périmètre (Prog / Matière)</label>
                     
@@ -192,7 +209,6 @@
                                     <option value="">Programme</option>
                                     {% for p in programmes %}
                                         <option value="{{ p.value }}" {% if user.programme == p %}selected{% endif %}>
-                                            {# .upper() pour transformer "pass" en "PASS" #}
                                             {{ p.value.upper() }}
                                         </option>
                                     {% endfor %}
@@ -212,7 +228,6 @@
                     {% else %}
                         <div class="d-flex gap-1 text-truncate">
                             <span class="badge bg-primary-subtle text-primary border px-2 py-2 flex-grow-1">
-                                {# Affichage propre en majuscules pour le badge #}
                                 {{ user.programme.value.upper() if user.programme else 'N/A' }}
                             </span>
                             <span class="badge bg-secondary-subtle text-secondary border px-2 py-2 flex-grow-1">
@@ -321,6 +336,14 @@
                                     <span class="badge rounded-pill bg-secondary shadow-sm px-3">COM</span>
                                 {% elif r == 'tcp' %}
                                     <span class="badge rounded-pill bg-light text-dark border shadow-sm px-3">TCP</span>
+                                {% elif r == 'parrain_marraine' %}
+                                    <span class="badge rounded-pill bg-info-subtle text-info border border-info shadow-sm px-3">PARRAIN</span>
+                                    {# Affichage du TOP référent #}
+                                    {% if u.manager %}
+                                        <div class="mt-1" style="font-size: 0.65rem; color: #6c757d;">
+                                            <i class="bi bi-person-badge me-1"></i>TOP : {{ u.manager.prenom }} {{ u.manager.nom[0] }}.
+                                        </div>
+                                    {% endif %}
                                 {% endif %}
                             {% endif %}
                         </td>
@@ -439,32 +462,59 @@ function toggleFields() {
     const s = document.getElementById('container-site');
     const p = document.getElementById('container-perimetre');
     const matWrapper = document.getElementById('matiereWrapper');
+    const passInput = document.getElementById('passInput');
+    const progSelect = document.getElementById('programmeSelect');
+    
+    // IDs mis à jour (sans le préfixe "parrain-")
+    const cNom = document.getElementById('container-nom');
+    const cPrenom = document.getElementById('container-prenom');
+    const cTel = document.getElementById('container-tel');
 
-    // 1. Gestion du Site
-    if (s) {
-        const isVisible = (role !== 'admin' && role !== '');
-        s.style.display = isVisible ? 'block' : 'none';
-        if (!isVisible) s.querySelector('select, input')?.setAttribute('disabled', 'disabled');
-        else s.querySelector('select, input')?.removeAttribute('disabled');
+    const isParrain = (role === 'parrain_marraine');
+
+    // 1. Gestion du Mot de Passe
+    if (passInput) {
+        if (isParrain) {
+            passInput.removeAttribute('required');
+            passInput.placeholder = "(Auto)";
+            passInput.closest('.col-md-2').style.opacity = "0.6";
+        } else {
+            passInput.setAttribute('required', 'required');
+            passInput.placeholder = "********";
+            passInput.closest('.col-md-2').style.opacity = "1";
+        }
     }
 
-    // 2. Gestion Périmètre (Prog / Matière)
-    // MODIFICATION ICI : On inclut 'top' dans les rôles qui ont besoin du périmètre
-    const needsPerimetre = (role === 'resp' || role === 'tcp' || role === 'top');
-    
+    // 2. Gestion des champs Identité (Nom, Prénom, Tel)
+    // On force l'affichage 'block' pour tout le monde (Admin, TCP, etc.)
+    [cNom, cPrenom, cTel].forEach(el => {
+        if (el) el.style.display = 'block'; 
+    });
+
+    // On s'assure que Nom et Prénom sont toujours requis pour FastAPI
+    if (cNom) cNom.querySelector('input').setAttribute('required', 'required');
+    if (cPrenom) cPrenom.querySelector('input').setAttribute('required', 'required');
+
+    // 3. Gestion du Site
+    if (s) {
+        // Le site est visible pour tout le monde sauf l'admin
+        const isVisible = (role !== 'admin' && role !== '');
+        s.style.display = isVisible ? 'block' : 'none';
+    }
+
+    // 4. Gestion Périmètre (Prog / Matière)
+    const needsPerimetre = ['resp', 'tcp', 'top', 'parrain_marraine'].includes(role);
     if (p) {
         p.style.display = needsPerimetre ? 'block' : 'none';
-        
         if (needsPerimetre) {
-            // Si c'est un TOP, on cache la colonne Matière mais on laisse le Programme
-            if (role === 'top') {
-                if (matWrapper) matWrapper.style.visibility = 'hidden'; // On cache la matière
-                document.getElementById('programmeSelect').style.width = '100%'; // Le programme prend toute la place
+            // Pour TOP et Parrain, on cache la matière pour ne garder que le Programme
+            if (role === 'top' || role === 'parrain_marraine') {
+                if (matWrapper) matWrapper.style.display = 'none'; 
+                if (progSelect) progSelect.parentElement.className = 'col-12'; 
             } else {
-                if (matWrapper) matWrapper.style.visibility = 'visible'; // On montre la matière pour RESP/TCP
+                if (matWrapper) matWrapper.style.display = 'block';
+                if (progSelect) progSelect.parentElement.className = 'col-6'; 
             }
-        } else {
-            p.querySelectorAll('select').forEach(el => el.value = "");
         }
     }
 }

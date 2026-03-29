@@ -33,10 +33,11 @@ async def login(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
+    # Recherche de l'utilisateur par email
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    # 1. Vérification email + mot de passe
+    # 1. VÉRIFICATION IDENTIFIANTS
     if not user or not pwd_context.verify(password, user.hashed_password):
         return templates.TemplateResponse(
             "login.html",
@@ -44,18 +45,36 @@ async def login(
             status_code=400,
         )
 
-    # 2. VÉRIFICATION DU COMPTE ACTIF (L'ajout est ici)
+    # 2. VÉRIFICATION DU RÔLE (Règle : Les Parrains n'ont aucun accès)
+    from app.models.user import Role # Assure-toi que l'import est correct
+    if user.role == Role.parrain_marraine:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Ce profil n'est pas autorisé à se connecter à l'application."},
+            status_code=403,
+        )
+
+    # 3. VÉRIFICATION DU COMPTE ACTIF
     if not user.is_active:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Ce compte a été désactivé. Veuillez contacter l'administrateur."},
-            status_code=403, # Forbidden
+            status_code=403,
         )
 
-    # 3. Création de la session si tout est OK
+    # 4. CRÉATION DE LA SESSION (Si toutes les étapes précédentes ont réussi)
     token = serializer.dumps({"user_id": user.id})
     response = RedirectResponse("/dashboard", status_code=302)
-    response.set_cookie("session", token, httponly=True, max_age=86400 * 7, samesite="lax")
+    
+    # Cookie sécurisé pour 7 jours
+    response.set_cookie(
+        "session", 
+        token, 
+        httponly=True, 
+        max_age=86400 * 7, 
+        samesite="lax",
+        secure=True
+    ) 
     return response
 
 @router.get("/logout")
@@ -80,27 +99,32 @@ async def forgot_password(
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
-    if user and user.is_active:
-        # 1. Génération du token (expire après 30 min via le salt dédié)
+    from app.models.user import Role # Import du modèle Role
+
+    # On n'envoie l'email QUE si l'utilisateur :
+    # 1. Existe
+    # 2. Est actif
+    # 3. N'EST PAS un parrain/marraine (car ils n'ont pas d'accès interface)
+    if user and user.is_active and user.role != Role.parrain_marraine:
+        
+        # 1. Génération du token
         token = serializer.dumps(user.email, salt="password-reset-salt")
         
         # 2. Génération de l'URL absolue
-        # On force la conversion en str car url_for retourne un objet Datastructures.URL
         reset_link = str(request.url_for("reset_password_page", token=token))
         
-        # 3. Envoi de l'email en arrière-plan (ne bloque pas la réponse HTTP)
-        # Assure-toi que send_reset_password_email est bien importé
+        # 3. Envoi de l'email en arrière-plan
         from app.services.mail import send_reset_password_email
         background_tasks.add_task(send_reset_password_email, user.email, reset_link)
         
         print(f"DEBUG: Tâche d'envoi créée pour {user.email}")
 
-    # 4. Réponse utilisateur (Message générique pour la sécurité)
+    # 4. Réponse utilisateur (On garde le message générique même si c'est un parrain, pour la sécurité)
     return templates.TemplateResponse(
         "forgot_password.html", 
         {
             "request": request, 
-            "success": "Si cet email existe, un lien de récupération a été envoyé."
+            "success": "Si cet email correspond à un compte actif, un lien de récupération a été envoyé."
         }
     )
 

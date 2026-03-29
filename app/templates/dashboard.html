@@ -22,7 +22,7 @@
 </div>
 {% endif %}
 
-{# --- NOTIFICATIONS DE DÉCLARATIONS (REFUSÉES OU COMMENTÉES) --- #}
+{# --- NOTIFICATIONS DE DÉCLARATIONS (Resté inchangé) --- #}
 {% if declarations %}
     {% for dec in declarations %}
         {% if dec.statut.value == 'refusee' or (dec.statut.value == 'soumise' and dec.commentaire_admin) %}
@@ -72,8 +72,8 @@
         </div>
     </div>
 
-   {# --- CARTE : GESTION DES MEMBRES (Admin, Coordo, Top COM, Resp) --- #}
-    {% if user.role.value in ['admin', 'coordo', 'top_com', 'resp'] %}
+    {# --- CARTE : GESTION DES MEMBRES --- #}
+    {% if user.role.value in ['admin', 'coordo', 'top_com', 'resp', 'top'] %}
     <div class="col-md-4">
         <div class="card h-100 shadow-sm border-0 border-top border-success border-4 transition-hover">
             <div class="card-body text-center p-4">
@@ -83,12 +83,14 @@
                 <h5 class="card-title fw-bold">
                     {% if user.role.value == 'resp' %}Mon Équipe TCP
                     {% elif user.role.value == 'top_com' %}Mon Équipe COM
+                    {% elif user.role.value == 'top' %}Mon Équipe Parrains / Marraines
                     {% elif user.role.value == 'coordo' %}Équipe Site
                     {% else %}Utilisateurs{% endif %}
                 </h5>
                 <p class="card-text text-muted small">
                     {% if user.role.value == 'resp' %}Gérez les intervenants de votre matière.
                     {% elif user.role.value == 'top_com' %}Gérez les membres COM de votre site.
+                    {% elif user.role.value == 'top' %}Gérez et suivez vos parrains et marraines directs.
                     {% else %}Validation des comptes et gestion des accès.{% endif %}
                 </p>
                 <a href="/admin/users" class="btn btn-outline-success w-100 shadow-sm">Gérer les membres</a>
@@ -113,7 +115,7 @@
     </div>
     {% endif %}
 
-    {# --- CARTE : PILOTAGE (Optionnel, si tu veux aussi le mettre ici pour l'Admin) --- #}
+    {# --- CARTE : PILOTAGE --- #}
     {% if user.role.value == 'admin' %}
     <div class="col-md-4">
         <div class="card h-100 shadow-sm border-0 border-top border-info border-4 transition-hover">

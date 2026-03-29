@@ -7,13 +7,13 @@ from sqlalchemy import (
     String, Boolean, DateTime, Enum as SAEnum, func,
     Table, Column, Integer, ForeignKey, Index, text
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.declaration import Declaration
     from app.models.sub_mission import SousMission
+    from app.models.student import Student
 
 # ── Raccourci pour values_callable ───────────────────────────────────────
 _vc = lambda x: [e.value for e in x]  # noqa: E731
@@ -47,7 +47,7 @@ class Role(str, enum.Enum):
     top     = "top"
     top_com = "top_com"
     com     = "com"
-
+    parrain_marraine = "parrain_marraine"
 
 class Filiere(str, enum.Enum):
     medecine       = "Médecine"
@@ -107,25 +107,49 @@ ROLES_CONTRACTUELS = {
 class User(Base):
     __tablename__ = "users"
 
-    # Colonnes identité / auth
+    # 1. AUTH : On autorise le vide pour les parrains sans accès
     id:              Mapped[int]  = mapped_column(primary_key=True)
     is_active:       Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    email:           Mapped[str]  = mapped_column(String(255), unique=True, nullable=False)
-    hashed_password: Mapped[str]  = mapped_column(String(255), nullable=False)
+    email:           Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role:            Mapped[Role] = mapped_column(
         SAEnum(Role, name="role_enum", values_callable=_vc),
         nullable=False,
     )
 
-    # Coordonnées personnelles
-    nom:         Mapped[str | None] = mapped_column(String(100))
-    prenom:      Mapped[str | None] = mapped_column(String(100))
-    adresse:     Mapped[str | None] = mapped_column(String(500))
-    code_postal: Mapped[str | None] = mapped_column(String(10))
-    ville:       Mapped[str | None] = mapped_column(String(100))
-    telephone:   Mapped[str | None] = mapped_column(String(20))
+    # 2. COORDONNÉES (Complétées)
+    nom:        Mapped[str | None] = mapped_column(String(100))
+    prenom:     Mapped[str | None] = mapped_column(String(100))
+    telephone:  Mapped[str | None] = mapped_column(String(20))
+    adresse:    Mapped[str | None] = mapped_column(String(255))
+    code_postal:Mapped[str | None] = mapped_column(String(10))
+    ville:      Mapped[str | None] = mapped_column(String(100))
+    
+    # Pour la paie / administration
+    date_naissance: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lieu_naissance: Mapped[str | None]      = mapped_column(String(100))
 
-    # Données sensibles chiffrées
+    # 3. --- HIÉRARCHIE ---
+    manager_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    # Relation vers le supérieur (ex: le TOP du Parrain)
+    manager: Mapped["User | None"] = relationship(
+        "User", 
+        remote_side=[id], 
+        back_populates="subordinates"
+    )
+    
+    # Relation vers les subordonnés (ex: les Parrains du TOP)
+    subordinates: Mapped[list["User"]] = relationship(
+        "User", 
+        back_populates="manager"
+    )
+
+   # 4. --- AJOUTS V3 : ÉTUDIANTS (P1) ---
+    # On utilise une chaîne "Student" pour éviter l'erreur "not defined"
+    students_mentored: Mapped[list["Student"]] = relationship("Student", back_populates="mentor")
+
+    # 5 --- Données sensibles chiffrées
     nss_encrypted:  Mapped[str | None] = mapped_column(String(500))
     iban_encrypted: Mapped[str | None] = mapped_column(String(500))
 

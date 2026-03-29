@@ -3,7 +3,14 @@
 {% block title %}Administration – {{ u.email }}{% endblock %}
 
 {% block content %}
-{% set can_edit = current_user.role.value in ['admin', 'coordo'] %}
+{# --- LOGIQUE DE DROITS ET DE CIBLE --- #}
+{% set is_admin_or_coordo = current_user.role.value in ['admin', 'coordo'] %}
+{% set is_top = current_user.role.value == 'top' %}
+{% set is_target_parrain = (u.role.value == 'parrain_marraine') %}
+
+{# Le TOP peut éditer SEULEMENT s'il s'agit d'un parrain #}
+{% set can_edit = is_admin_or_coordo or (is_top and is_target_parrain) %}
+
 <div class="container py-4">
     {# --- FIL D'ARIANE --- #}
     <nav aria-label="breadcrumb" class="mb-4">
@@ -24,9 +31,6 @@
                 </div>
 
                 <div class="card-body p-4 bg-light">
-                    {# --- LOGIQUE DE PERMISSION (ADMINS & COORDOS UNIQUEMENT) --- #}
-                    {% set can_edit = current_user.role.value in ['admin', 'coordo'] %}
-
                     {% if request.query_params.get('error') == 'duplicate_resp' %}
                     <div class="alert alert-danger shadow-sm border-start border-4 border-danger">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -34,41 +38,45 @@
                     </div>
                     {% endif %}
 
-                    <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-4">
+                    <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-4" id="adminUserForm">
                         <input type="hidden" name="email" value="{{ u.email }}">
                         
-                        {# --- SECTION 1 : IDENTITÉ (LECTURE SEULE) --- #}
+                        {# --- SECTION 1 : IDENTITÉ (LOGIQUE DE VERROUILLAGE) --- #}
                         <div class="col-12">
-                            <div class="card border-0 bg-white-50 border-start border-4 border-secondary shadow-sm">
+                            <div class="card border-0 bg-white border-start border-4 border-secondary shadow-sm">
                                 <div class="card-body py-3">
                                     <h6 class="text-muted text-uppercase small fw-bold mb-3">
-                                        <i class="bi bi-person-badge me-2"></i>Informations personnelles (Lecture seule)
+                                        <i class="bi bi-person-badge me-2"></i>Informations d'identité
+                                        {% if not is_target_parrain %}
+                                            <span class="badge bg-light text-muted ms-2 border"><i class="bi bi-lock-fill me-1"></i>Verrouillé (Lecture seule)</span>
+                                        {% endif %}
                                     </h6>
                                     <div class="row g-3">
                                         <div class="col-md-3">
-                                            <label class="form-label small text-muted mb-0">Collaborateur</label>
-                                            <div class="fw-bold">{{ u.prenom or '-' }} {{ u.nom or '' }}</div>
+                                            <label class="form-label small text-muted mb-1">Nom</label>
+                                            <input type="text" name="nom" id="input_nom" 
+                                                   class="form-control form-control-sm fw-bold {{ 'bg-light text-muted' if not is_target_parrain }}" 
+                                                   value="{{ u.nom if u.nom else '' }}" 
+                                                   {% if not is_target_parrain %}readonly style="pointer-events: none;" tabindex="-1"{% endif %}>
                                         </div>
                                         <div class="col-md-3">
-                                            <label class="form-label small text-muted mb-0">Email</label>
-                                            <div class="text-primary text-break">{{ u.email }}</div>
+                                            <label class="form-label small text-muted mb-1">Prénom</label>
+                                            <input type="text" name="prenom" id="input_prenom"
+                                                   class="form-control form-control-sm fw-bold {{ 'bg-light text-muted' if not is_target_parrain }}" 
+                                                   value="{{ u.prenom if u.prenom else '' }}" 
+                                                   {% if not is_target_parrain %}readonly style="pointer-events: none;" tabindex="-1"{% endif %}>
                                         </div>
                                         <div class="col-md-3">
-                                            <label class="form-label small text-muted mb-0">Téléphone</label>
-                                            <div class="fw-bold">
-                                                {% if u.telephone %}
-                                                    <i class="bi bi-telephone text-secondary me-1"></i>{{ u.telephone }}
-                                                {% else %}
-                                                    <span class="text-muted fw-normal small italic">Non renseigné</span>
-                                                {% endif %}
-                                            </div>
+                                            <label class="form-label small text-muted mb-1">Téléphone</label>
+                                            <input type="tel" name="telephone" id="input_tel"
+                                                   class="form-control form-control-sm fw-bold {{ 'bg-light text-muted' if not is_target_parrain }}" 
+                                                   value="{{ u.telephone if u.telephone else '' }}" 
+                                                   {% if not is_target_parrain %}readonly style="pointer-events: none;" tabindex="-1"{% endif %}>
                                         </div>
                                         <div class="col-md-3">
-                                            <label class="form-label small text-muted mb-0">Cursus déclaré</label>
-                                            <div>
-                                                <span class="badge bg-light text-dark border">{{ u.filiere|string if u.filiere else 'N/A' }}</span>
-                                                <span class="badge bg-light text-dark border">{{ u.annee|string if u.annee else '' }}</span>
-                                            </div>
+                                            <label class="form-label small text-muted mb-1">Email</label>
+                                            <input type="text" class="form-control form-control-sm bg-light text-primary" 
+                                                   value="{{ u.email }}" readonly style="pointer-events: none;" tabindex="-1">
                                         </div>
                                     </div>
                                 </div>
@@ -78,25 +86,28 @@
                         {# --- SECTION 2 : RÔLE & SITE --- #}
                         <div class="col-md-6 mt-4">
                             <label class="form-label small fw-bold text-uppercase text-primary">Rôle Système</label>
-                            <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm" {% if not can_edit %}disabled{% endif %}>
+                            <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm" {% if not is_admin_or_coordo %}disabled{% endif %}>
                                 {% for r in roles %}
-                                <option value="{{ r }}" {% if u.role|string == r|string %}selected{% endif %}>{{ r|upper }}</option>
+                                <option value="{{ r.value }}" {% if u.role.value == r.value %}selected{% endif %}>{{ r.value|upper }}</option>
                                 {% endfor %}
                             </select>
+                            {% if not is_admin_or_coordo %}
+                                <input type="hidden" name="role" value="{{ u.role.value }}">
+                            {% endif %}
                             <div class="form-text small">Définit les permissions d'accès au dashboard.</div>
                         </div>
 
                         <div class="col-md-6 mt-4 section-collaborateur">
                             <label class="form-label small fw-bold text-uppercase">Site d'affectation</label>
-                            <select name="site" class="form-select shadow-sm" {% if not can_edit %}disabled{% endif %}>
+                            <select name="site" id="siteSelect" class="form-select shadow-sm" {% if not can_edit %}disabled{% endif %}>
                                 <option value="">-- Aucun site --</option>
                                 {% for s in sites %}
-                                <option value="{{ s }}" {% if u.site|string == s|string %}selected{% endif %}>{{ s }}</option>
+                                <option value="{{ s.value }}" {% if u.site and u.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
                                 {% endfor %}
                             </select>
                         </div>
 
-                        {# --- SECTION 3 : PÉRIMÈTRE D'ENSEIGNEMENT --- #}
+                        {# --- SECTION 3 : PÉRIMÈTRE PÉDAGOGIQUE --- #}
                         <div class="col-12 section-collaborateur">
                             <div class="card border-primary-subtle shadow-sm bg-white">
                                 <div class="card-body">
@@ -107,11 +118,11 @@
                                             <select name="programme" id="programmeSelect" class="form-select" {% if not can_edit %}disabled{% endif %}>
                                                 <option value="">-- Sélectionner un programme --</option>
                                                 {% for p in programmes %}
-                                                <option value="{{ p }}" {% if u.programme|string == p|string %}selected{% endif %}>{{ p }}</option>
+                                                <option value="{{ p.value }}" {% if u.programme and u.programme.value == p.value %}selected{% endif %}>{{ p.value }}</option>
                                                 {% endfor %}
                                             </select>
                                         </div>
-                                        <div class="col-md-6">
+                                        <div class="col-md-6" id="container-matiere-edit">
                                             <label class="form-label small fw-bold"><i class="bi bi-tags me-1"></i>Matière / UE</label>
                                             <select name="matiere" id="matiereSelect" class="form-select" {% if not can_edit %}disabled{% endif %}>
                                                 {# Rempli dynamiquement par JS #}
@@ -128,21 +139,18 @@
 
                         {# --- ACTIONS --- #}
                         <div class="col-12 d-flex justify-content-between mt-5 pt-3 border-top align-items-center">
-                            {# Bouton de retour toujours visible #}
                             <a href="/admin/users" class="btn btn-outline-secondary px-4 rounded-pill">
                                 <i class="bi bi-arrow-left me-1"></i> Retour à la liste
                             </a>
 
-                            {# Vérification des droits : Seuls ADMIN et COORDO peuvent enregistrer #}
-                            {% if current_user.role.value in ['admin', 'coordo'] %}
+                            {% if can_edit %}
                                 <button type="submit" class="btn btn-primary px-5 shadow rounded-pill fw-bold">
                                     <i class="bi bi-save me-1"></i> Enregistrer les modifications
                                 </button>
                             {% else %}
-                                {# Message pour TOP_COM, RESP, etc. #}
                                 <div class="alert alert-info py-2 px-4 mb-0 rounded-pill small d-flex align-items-center shadow-sm border-0">
                                     <i class="bi bi-info-circle-fill me-2 text-primary"></i>
-                                    <span class="text-dark fw-medium">Mode consultation : modification réservée aux administrateurs.</span>
+                                    <span class="text-dark fw-medium">Mode consultation uniquement.</span>
                                 </div>
                             {% endif %}
                         </div>
@@ -156,7 +164,7 @@
 {# --- DATA BRIDGE --- #}
 <div id="data-bridge" 
      data-matieres='{{ matieres_par_prog | tojson | safe }}'
-     data-current-matiere="{{ u.matiere or '' }}"
+     data-current-matiere="{{ u.matiere.value if u.matiere and u.matiere.value else (u.matiere if u.matiere else '') }}"
      style="display: none;">
 </div>
 
@@ -170,6 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const matSelect = document.getElementById('matiereSelect');
     const roleSelect = document.getElementById('roleSelect');
     const sectionsCollab = document.querySelectorAll('.section-collaborateur');
+    const containerMat = document.getElementById('container-matiere-edit');
 
     function updateMatieres() {
         const selectedProg = progSelect.value;
@@ -180,25 +189,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 const opt = document.createElement('option');
                 opt.value = m;
                 opt.textContent = m;
-                // On pré-sélectionne la matière si c'est celle de l'utilisateur
-                if (m === CURRENT_MATIERE) opt.selected = true;
+                if (String(m) === String(CURRENT_MATIERE)) opt.selected = true;
                 matSelect.appendChild(opt);
             });
         }
     }
 
     function checkRole() {
-        // Cache les options d'affectation si l'utilisateur est Admin
-        const isExcluded = (roleSelect.value === 'admin');
+        const role = roleSelect.value;
+        const isExcluded = (role === 'admin');
         sectionsCollab.forEach(function(section) {
             section.style.display = isExcluded ? 'none' : 'block';
         });
+
+        if (role === 'top' || role === 'parrain_marraine') {
+            if (containerMat) containerMat.style.display = 'none';
+        } else {
+            if (containerMat) containerMat.style.display = 'block';
+        }
     }
 
     progSelect.addEventListener('change', updateMatieres);
     roleSelect.addEventListener('change', checkRole);
 
-    // Initialisation au chargement de la page
     checkRole();
     updateMatieres();
 });

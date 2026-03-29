@@ -92,6 +92,10 @@ async def validate_user_creation_rights(
         if user_to_create_role != Role.tcp:
             raise HTTPException(status_code=403, detail="Un Responsable ne peut créer que des TCP.")
     
+    if current_user.role == Role.top:
+        if user_to_create_role != Role.parrain_marraine:
+            raise HTTPException(status_code=403, detail="Un TOP ne peut créer que des Parrains/Marraines.")
+
     if current_user.role == Role.coordo:
         if user_to_create_role == Role.admin:
             raise HTTPException(status_code=403, detail="Un Coordinateur ne peut pas créer d'Admin.")
@@ -104,4 +108,11 @@ async def validate_user_creation_rights(
 
     return True
 
-staff_required = require_role([Role.admin, Role.coordo, Role.top_com, Role.resp])
+staff_required = require_role([
+    Role.admin, 
+    Role.coordo, 
+    Role.top_com, 
+    Role.resp, 
+    Role.tcp, 
+    Role.top
+])

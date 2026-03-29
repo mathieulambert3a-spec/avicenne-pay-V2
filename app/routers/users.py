@@ -21,57 +21,69 @@ router = APIRouter(prefix="/users")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.get("", response_class=HTMLResponse)
-@router.get("", response_class=HTMLResponse)
 async def list_users(   
     request: Request, 
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. DÉFINITION DE LA HIÉRARCHIE DES RÔLES
-    # On attribue un chiffre à chaque rôle pour forcer l'ordre
+    # 1. DÉFINITION DE LA HIÉRARCHIE DES RÔLES (Tri pour l'affichage)
     role_priority = case(
         {
             Role.admin: 1,
             Role.coordo: 2,
-            Role.top_com: 3, # Vérifie que 'top_com' est bien le nom dans ton Enum Role
-            Role.top: 4,     # Vérifie que 'top' est bien le nom dans ton Enum Role
+            Role.top_com: 3,
+            Role.top: 4,
             Role.resp: 5,
             Role.tcp: 6,
-            Role.com: 7      # Vérifie que 'com' est bien le nom dans ton Enum Role
+            Role.parrain_marraine: 7, # Placé après les rôles pédagogiques
+            Role.com: 8,
         },
-        value=User.role
+        value=User.role,
+        else_=9
     )
 
-    # 2. PRÉPARATION DE LA REQUÊTE AVEC TRI
-    # On trie d'abord par la priorité du rôle, puis par Nom/Prénom
-    query = select(User).order_by(role_priority, User.nom.asc(), User.prenom.asc())
+    # 2. PRÉPARATION DE LA REQUÊTE
+    query = (
+        select(User)
+        .options(selectinload(User.manager)) 
+        .order_by(role_priority, User.nom.asc(), User.prenom.asc())
+    )
     
-    # 3. FILTRES DE SÉCURITÉ (Visibilité selon le rôle)
+    # 3. FILTRES DE SÉCURITÉ ET VISIBILITÉ DES PARRAINS
+    
     if current_user.role == Role.admin:
+        # L'Admin voit l'intégralité de la base, parrains inclus.
         pass 
+        
     elif current_user.role == Role.coordo:
+        # Le Coordo voit tout son site (Staff + Parrains rattachés à son site)
         query = query.where(User.site == current_user.site)
+        
+    elif current_user.role == Role.top:
+        # Le TOP voit uniquement les Parrains/Marraines qu'il a créés (manager_id)
+        # Il ne voit pas les autres membres du staff.
+        query = query.where(
+            User.manager_id == current_user.id,
+            User.role == Role.parrain_marraine
+        )
+        
     elif current_user.role == Role.top_com:
-        # Le TOP COM voit lui-même ET tous les COM de son site
+        # Le TOP COM ne voit que les COM de son site (Pas de parrains)
         query = query.where(
             User.site == current_user.site,
-            or_(
-                User.role == Role.com,
-                User.id == current_user.id
-            )
+            User.role == Role.com
         )
+        
     elif current_user.role == Role.resp:
+        # Le RESP voit ses TCP sur son site/matière (Pas de parrains)
         query = query.where(
-            or_(
-                User.id == current_user.id,
-                and_(
-                    User.role == Role.tcp,
-                    User.site == current_user.site,
-                    User.matiere == current_user.matiere
-                )
-            )
+            User.role == Role.tcp,
+            User.site == current_user.site,
+            User.matiere == current_user.matiere
         )
+        
     else: 
+        # Sécurité pour TCP, COM et Parrains : vision restreinte à soi-même
         query = query.where(User.id == current_user.id)
 
     # 4. EXÉCUTION
@@ -84,15 +96,14 @@ async def list_users(
             "request": request, 
             "users": users, 
             "current_user": current_user, 
-            "user": current_user,
+            "user": current_user, 
             "roles": list(Role),
             "sites": list(Site),
             "programmes": list(Programme),
             "matieres_par_prog": MATIERES
         }
     )
-
-# --- NOUVELLE ROUTE : AFFICHER LE FORMULAIRE DE PERMISSIONS ---
+# --- AFFICHER LE FORMULAIRE DE PERMISSIONS ---
 @router.get("/{user_id}/permissions", response_class=HTMLResponse)
 async def get_user_permissions(
     user_id: int,
@@ -222,10 +233,11 @@ async def update_user_permissions(
 async def create_user(
     request: Request,
     email: str = Form(...),
-    password: str = Form(...),
+    password: Optional[str] = Form(None),
     role: str = Form(...),
-    nom: str = Form(""),       # Ajouté si absent
-    prenom: str = Form(""),    # Ajouté si absent
+    nom: str = Form(""),       
+    prenom: str = Form(""), 
+    telephone: Optional[str] = Form(None),
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
@@ -237,71 +249,96 @@ async def create_user(
     except ValueError:
         raise HTTPException(status_code=400, detail="Rôle invalide")
 
-    # Initialisation des variables de sécurité
+    # --- INITIALISATION DES VARIABLES ---
     new_user_site = None
     new_user_prog = None
     new_user_matiere = None
+    new_user_manager_id = None
+    is_profil_complete = False 
 
-    # --- LOGIQUE MÉTIER AVICENNE ---
+    # --- 1. LOGIQUE MÉTIER ET HIÉRARCHIE ---
     
     if current_user.role == Role.admin:
-        # L'admin peut tout créer, mais on suit ta règle :
-        # On ne convertit en Enum que SI la valeur n'est pas vide
-        if target_role != Role.admin:
-            if site and site.strip(): 
-                new_user_site = Site(site)
+        if site and site.strip(): 
+            new_user_site = Site(site)
+        
+        if target_role in [Role.resp, Role.tcp, Role.top, Role.parrain_marraine]:
+            if programme and programme.strip():
+                new_user_prog = Programme(programme)
             
-            # Si c'est un vacataire/resp, il lui faut programme et matière
             if target_role in [Role.resp, Role.tcp]:
-                if programme and programme.strip():
-                    new_user_prog = Programme(programme)
                 new_user_matiere = matiere if matiere and matiere.strip() else None
 
     elif current_user.role == Role.coordo:
-        # Le Coordo ne crée que des Resp ou TCP sur SON site
-        if target_role not in [Role.resp, Role.tcp]:
-            raise HTTPException(status_code=403, detail="Un coordinateur ne peut créer que des Responsables ou des Vacataires.")
+        if target_role not in [Role.resp, Role.tcp, Role.top, Role.top_com, Role.com]:
+            raise HTTPException(status_code=403, detail="Vous ne pouvez pas créer ce type de rôle.")
         
-        new_user_site = current_user.site # Héritage forcé du site
+        new_user_site = current_user.site 
         if programme and programme.strip():
             new_user_prog = Programme(programme)
         new_user_matiere = matiere
 
     elif current_user.role == Role.resp:
-        # Le Resp ne crée que des TCP sur SON site, SON programme et SA matière
         if target_role != Role.tcp:
-            raise HTTPException(status_code=403, detail="Un Responsable ne peut créer que des Vacataires (TCP).")
+            raise HTTPException(status_code=403, detail="Un Responsable ne peut créer que des TCP.")
         
         new_user_site = current_user.site
         new_user_prog = current_user.programme
         new_user_matiere = current_user.matiere
+        new_user_manager_id = current_user.id
 
-    # --- ENREGISTREMENT ---
+    elif current_user.role == Role.top:
+        if target_role != Role.parrain_marraine:
+            raise HTTPException(status_code=403, detail="Un TOP ne peut créer que des Parrains/Marraines.")
+        
+        new_user_site = current_user.site
+        new_user_prog = current_user.programme 
+        new_user_manager_id = current_user.id
+        
+        # Le parrain est créé avec son identité complète par le TOP
+        is_profil_complete = True 
+
+    # --- 2. GESTION DU MOT DE PASSE ---
+    # Pour les parrains (pas d'accès), on génère un hash de sécurité aléatoire
+    if target_role == Role.parrain_marraine:
+        import secrets
+        hashed_pw = pwd_context.hash(secrets.token_urlsafe(32))
+    else:
+        if not password:
+            raise HTTPException(status_code=400, detail="Le mot de passe est obligatoire.")
+        hashed_pw = pwd_context.hash(password)
+
+    # --- 3. VÉRIFICATION D'EXISTENCE ---
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email déjà utilisé.")
+        return RedirectResponse(url="/admin/users?error=email_exists", status_code=303)
 
+    # --- 4. CRÉATION DE L'UTILISATEUR ---
     new_user = User(
-        email=email,
-        nom=nom,
-        prenom=prenom,
-        hashed_password=pwd_context.hash(password),
+        email=email.lower().strip(),
+        nom=nom.upper().strip() if nom else None,
+        prenom=prenom.capitalize().strip() if prenom else None,
+        telephone=telephone.strip() if telephone else None,
+        hashed_password=hashed_pw,
         role=target_role,
         site=new_user_site,
         programme=new_user_prog, 
         matiere=new_user_matiere,
-        profil_complete=False
+        manager_id=new_user_manager_id,
+        profil_complete=is_profil_complete,
+        is_active=True
     )
 
     db.add(new_user)
+    
     try:
         await db.commit()
     except Exception as e:
         await db.rollback()
-        print(f"Erreur commit: {e}")
-        raise HTTPException(status_code=500, detail="Erreur lors de la création.")
+        print(f"Erreur lors de la création : {e}")
+        raise HTTPException(status_code=500, detail="Erreur technique lors de l'enregistrement.")
 
-    return RedirectResponse(url="/users", status_code=303)
+    return RedirectResponse(url="/admin/users?msg=created", status_code=303)
 
 @router.post("/{user_id}/delete")
 async def delete_user(

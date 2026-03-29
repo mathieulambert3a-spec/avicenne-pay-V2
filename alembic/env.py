@@ -12,7 +12,7 @@ from alembic import context
 
 from app.database import Base
 from app.models import (  # noqa: F401 – ensure all models are imported
-    User, Mission, SousMission, Declaration, LigneDeclaration
+    User, Mission, SousMission, Declaration, LigneDeclaration, Student
 )
 
 config = context.config
