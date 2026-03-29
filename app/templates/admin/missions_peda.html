@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% if current_type == "PEDA" %}
+    {% set theme_color = "primary" %}
+    {% set icon_header = "bi-mortarboard" %}
+    {% set title_label = "Missions Pédago" %}
+    {% set subtitle = "COORDO & TOP" %}
+    {% set accent_hex = "#0d6efd" %}
+{% elif current_type == "COM" %}
+    {% set theme_color = "indigo" %}
+    {% set icon_header = "bi-megaphone" %}
+    {% set title_label = "Missions Com" %}
+    {% set subtitle = "TOP COM & COM" %}
+    {% set accent_hex = "#6610f2" %}
+{% else %}
+    {% set theme_color = "warning" %}
+    {% set icon_header = "bi-vector-pen" %}
+    {% set title_label = "Missions DA" %}
+    {% set subtitle = "RESP & TCP" %}
+    {% set accent_hex = "#ffc107" %}
+{% endif %}
+
+{% block title %}Référentiel {{ title_label }}{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="--theme-accent: {{ accent_hex }};">
+
+    {# --- EN-TÊTE --- #}
+    <div class="d-flex justify-content-between align-items-center mb-4 p-4 bg-white shadow-sm rounded-4 border-start border-{{ theme_color }} border-5">
+        <div>
+            <h1 class="h4 mb-1 text-dark fw-bold">
+                <i class="bi {{ icon_header }} text-{{ theme_color }} me-2"></i>{{ title_label }}
+            </h1>
+            <p class="text-muted small mb-0">Configuration pour <strong>{{ subtitle }}</strong></p>
+        </div>
+        <button class="btn btn-{{ theme_color }} rounded-pill px-4 shadow-sm fw-bold" 
+                data-bs-toggle="modal" data-bs-target="#modalAddMission">
+            <i class="bi bi-plus-lg me-2"></i>Nouvelle Mission
+        </button>
+    </div>
+
+    {# --- LISTE DES MISSIONS --- #}
+    <div class="accordion" id="accordionMissionsAdmin">
+        {% for mission in missions %}
+        <div class="accordion-item border-0 mb-3 shadow-sm rounded-3 overflow-hidden" 
+            style="border-left: 4px solid var(--theme-accent) !important;">
+            
+            <div class="accordion-header bg-white border-bottom d-grid" 
+                style="grid-template-columns: 1fr auto 50px; min-height: 64px; align-items: center;">
+                
+                {# ZONE 1 : TITRE #}
+                <div class="ps-3 d-flex align-items-center h-100" 
+                    role="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ mission.id }}">
+                    <i class="bi bi-folder2 text-{{ theme_color }} me-2" style="font-size: 1.2rem;"></i>
+                    <span class="fw-bold {% if not mission.is_active %}text-muted text-decoration-line-through{% endif %}">
+                        {{ mission.titre }}
+                        {% if mission.resp_only %}<span class="badge rounded-pill bg-danger-subtle text-danger ms-2" style="font-size: 0.65rem;">RESP</span>{% endif %}
+                    </span>
+                </div>
+
+                {# ZONE 2 : ACTIONS #}
+                <div class="d-flex gap-2 px-2">
+                    <button class="btn btn-sm btn-outline-{{ theme_color }} btn-add-sub" 
+                            data-parent-id="{{ mission.id }}" data-parent-name="{{ mission.titre|e }}" data-is-resp="{{ 'true' if mission.resp_only else 'false' }}">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+
+                    <button class="btn btn-sm btn-outline-{{ theme_color }} btn-edit-parent" 
+                            data-parent-id="{{ mission.id }}" data-parent-name="{{ mission.titre|e }}" data-is-resp="{{ 'true' if mission.resp_only else 'false' }}">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                    
+                    <form method="post" action="/admin/referentiel/missions/{{ mission.id }}/toggle-active?type={{ current_type.lower() }}" class="mb-0">
+                        <button class="btn btn-sm {% if mission.is_active %}btn-outline-success{% else %}btn-outline-secondary{% endif %}" type="submit">
+                            <i class="bi {% if mission.is_active %}bi-eye-fill{% else %}bi-eye-slash{% endif %}"></i>
+                        </button>
+                    </form>
+
+                    {# BOUTON SUPPRIMER PARENT #}
+                    <form action="/admin/referentiel/missions/{{ mission.id }}/delete" method="post" class="mb-0">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDelete(this)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+
+                {# ZONE 3 : CHEVRON #}
+                <div class="d-flex justify-content-center align-items-center h-100 border-start" 
+                    role="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ mission.id }}">
+                    <i class="bi bi-chevron-down rotate-icon"></i>
+                </div>
+            </div>
+
+            <div id="collapse{{ mission.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionMissionsAdmin">
+                <div class="accordion-body bg-light-subtle border-top p-0">
+                    {% if mission.sous_missions %}
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light small">
+                            <tr>
+                                <th class="ps-3 py-2">Libellé</th>
+                                <th class="text-center py-2">Unité</th>
+                                <th class="text-end py-2">Tarif HT</th>
+                                <th class="text-end pe-3 py-2">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sm in mission.sous_missions %}
+                            <tr class="align-middle {% if not sm.is_active %}opacity-50 table-secondary{% endif %}">
+                                <td class="ps-3 py-2 small">{{ sm.titre }}</td>
+                                <td class="text-center py-2"><span class="badge bg-white text-dark border fw-normal">{{ sm.unite or '-' }}</span></td>
+                                <td class="text-end py-2 fw-bold text-{{ theme_color }}">{{ "{:,.2f}".format(sm.tarif)|replace(',', ' ') }} €</td>
+                                <td class="text-end pe-3 py-2">
+                                    <div class="d-flex justify-content-end gap-2">
+                                        {# BOUTON ÉDITER SOUS-MISSION #}
+                                        <button type="button" class="btn btn-link text-{{ theme_color }} p-0 btn-edit-sub" 
+                                                data-sm-id="{{ sm.id }}" 
+                                                data-sm-name="{{ sm.titre|e }}" 
+                                                data-sm-unite="{{ sm.unite if sm.unite else '' }}" 
+                                                data-sm-tarif="{{ sm.tarif }}">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                        {# BOUTON SUPPRIMER SOUS-MISSION #}
+                                        <form action="/admin/referentiel/sub-mission/{{ sm.id }}/delete" method="post" class="d-inline mb-0">
+                                            <button type="button" class="btn btn-link text-danger p-0" onclick="confirmDelete(this)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                                            </table>
+                    {% else %}
+                    <div class="p-4 text-center text-muted small italic">Aucune sous-mission enregistrée.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %} 
+    </div>
+</div>
+
+{# --- MODAL 1 : AJOUTER CATÉGORIE PARENTE --- #}
+<div class="modal fade" id="modalAddMission" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form action="/admin/referentiel/missions/new" method="post">
+                <div class="modal-header bg-{{ theme_color }} text-white">
+                    <h5 class="modal-title fw-bold">Nouvelle Catégorie ({{ current_type }})</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <input type="hidden" name="type_mission" value="{{ current_type }}">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Titre</label>
+                        <input type="text" name="titre" class="form-control" required>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="resp_only" id="flexSwitchResp">
+                        <label class="form-check-label">Visible uniquement par les Responsables</label>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light"><button type="submit" class="btn btn-{{ theme_color }} rounded-pill px-4">Enregistrer</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# --- MODAL 2 : MODIFIER CATÉGORIE PARENTE --- #}
+<div class="modal fade" id="modalEditMission" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form id="formEditMission" method="post">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold">Modifier la catégorie</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nouveau titre</label>
+                        <input type="text" name="titre" id="editParentNameInput" class="form-control" required>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="resp_only" id="editFlexSwitchResp">
+                        <label class="form-check-label">Accès restreint (RESP)</label>
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-dark rounded-pill px-4">Mettre à jour</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# --- MODAL 3 : AJOUTER UNE SOUS-MISSION --- #}
+<div class="modal fade" id="modalAddSubMission" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form action="/admin/referentiel/sub-mission/add" method="post">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title fw-bold">Ajouter dans : <span id="parentNameDisplay"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <input type="hidden" name="parent_id" id="parentIdInput">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Libellé de la sous-mission</label>
+                        <input type="text" name="titre" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Unité</label>
+                            <select name="unite" class="form-select">
+                                <option value="">- Sélectionner -</option>
+                                {% for choice in unites %}
+                                    <option value="{{ choice }}">{{ choice }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Tarif HT (€)</label>
+                            <input type="number" step="0.01" name="tarif" class="form-control" required>
+                        </div>
+                    </div>
+                    <div id="respBadge" class="alert alert-danger d-none py-2 small"><i class="bi bi-exclamaition-triangle me-2"></i>Cette sous-mission héritera de l'accès <strong>RESP</strong>.</div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-secondary rounded-pill px-4">Ajouter</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{# --- MODAL 4 : MODIFIER UNE SOUS-MISSION --- #}
+<div class="modal fade" id="modalEditSubMission" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form id="formEditSubMission" method="post">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold">Modifier la prestation</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Libellé</label>
+                        <input type="text" name="titre" id="editSubTitre" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Unité</label>
+                            <select name="unite" id="editSubUnite" class="form-select">
+                                <option value="">- Sélectionner -</option>
+                                {% for choice in unites_disponibles %}
+                                    <option value="{{ choice }}">{{ choice }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Tarif HT (€)</label>
+                            <input type="number" step="0.01" name="tarif" id="editSubTarif" class="form-control" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">Enregistrer les modifications</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('click', function (event) {
+    // 1. MODAL AJOUT SOUS-MISSION
+    const btnAddSub = event.target.closest('.btn-add-sub');
+    if (btnAddSub) {
+        document.getElementById('parentIdInput').value = btnAddSub.getAttribute('data-parent-id');
+        document.getElementById('parentNameDisplay').innerText = btnAddSub.getAttribute('data-parent-name');
+        const isResp = btnAddSub.getAttribute('data-is-resp') === 'true';
+        document.getElementById('respBadge').classList.toggle('d-none', !isResp);
+        new bootstrap.Modal(document.getElementById('modalAddSubMission')).show();
+    }
+
+    // 2. MODAL EDITION PARENT
+    const btnEdit = event.target.closest('.btn-edit-parent');
+    if (btnEdit) {
+        const mid = btnEdit.getAttribute('data-parent-id');
+        document.getElementById('formEditMission').action = `/admin/referentiel/missions/${mid}/edit`; 
+        document.getElementById('editParentNameInput').value = btnEdit.getAttribute('data-parent-name');
+        document.getElementById('editFlexSwitchResp').checked = btnEdit.getAttribute('data-is-resp') === 'true';
+        new bootstrap.Modal(document.getElementById('modalEditMission')).show();
+    }
+
+   // 3. MODAL EDITION SOUS-MISSION
+    const btnEditSub = event.target.closest('.btn-edit-sub');
+    if (btnEditSub) {
+        const smId = btnEditSub.getAttribute('data-sm-id');
+        const form = document.getElementById('formEditSubMission');
+        form.action = `/admin/referentiel/sub-mission/${smId}/edit`;
+        
+        document.getElementById('editSubTitre').value = btnEditSub.getAttribute('data-sm-name');
+        document.getElementById('editSubTarif').value = btnEditSub.getAttribute('data-sm-tarif');
+        
+        // --- RÉCUPÉRATION SÉCURISÉE DE L'UNITÉ ---
+        const rawUnite = (btnEditSub.getAttribute('data-sm-unite') || "").trim();
+        const selectUnite = document.getElementById('editSubUnite');
+        
+        // 1. On réinitialise le select à l'option par défaut
+        selectUnite.selectedIndex = 0; 
+
+        // 2. On tente le matching direct
+        selectUnite.value = rawUnite;
+
+        // 3. Si échec (valeur non trouvée dans la liste), on cherche manuellement
+        if (selectUnite.value === "" && rawUnite !== "") {
+            const options = selectUnite.options;
+            for (let i = 0; i < options.length; i++) {
+                if (options[i].value.toLowerCase().trim() === rawUnite.toLowerCase()) {
+                    selectUnite.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // Debug optionnel : affiche dans la console si l'unité n'a toujours pas été trouvée
+        if (selectUnite.value === "" && rawUnite !== "") {
+            console.warn("L'unité '" + rawUnite + "' n'existe pas dans la liste des choix du modal.");
+        }
+        
+        new bootstrap.Modal(document.getElementById('modalEditSubMission')).show();
+    }
+});
+
+function confirmDelete(buttonElement) {
+    const form = buttonElement.closest('form');
+    Swal.fire({
+        title: 'Supprimer ?',
+        text: "Cette action est irréversible.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        confirmButtonText: 'Supprimer',
+        cancelButtonText: 'Annuler',
+        reverseButtons: true
+    }).then((result) => { if (result.isConfirmed) form.submit(); });
+}
+</script>
+{% endblock %}

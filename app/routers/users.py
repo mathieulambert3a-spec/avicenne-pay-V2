@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, case
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
@@ -21,14 +21,32 @@ router = APIRouter(prefix="/users")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.get("", response_class=HTMLResponse)
+@router.get("", response_class=HTMLResponse)
 async def list_users(   
     request: Request, 
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # --- FILTRAGE ET TRI PAR NOM/PRENOM ---
-    query = select(User).order_by(User.nom, User.prenom)
+    # 1. DÉFINITION DE LA HIÉRARCHIE DES RÔLES
+    # On attribue un chiffre à chaque rôle pour forcer l'ordre
+    role_priority = case(
+        {
+            Role.admin: 1,
+            Role.coordo: 2,
+            Role.top_com: 3, # Vérifie que 'top_com' est bien le nom dans ton Enum Role
+            Role.top: 4,     # Vérifie que 'top' est bien le nom dans ton Enum Role
+            Role.resp: 5,
+            Role.tcp: 6,
+            Role.com: 7      # Vérifie que 'com' est bien le nom dans ton Enum Role
+        },
+        value=User.role
+    )
+
+    # 2. PRÉPARATION DE LA REQUÊTE AVEC TRI
+    # On trie d'abord par la priorité du rôle, puis par Nom/Prénom
+    query = select(User).order_by(role_priority, User.nom.asc(), User.prenom.asc())
     
+    # 3. FILTRES DE SÉCURITÉ (Visibilité selon le rôle)
     if current_user.role == Role.admin:
         pass 
     elif current_user.role == Role.coordo:
@@ -47,19 +65,21 @@ async def list_users(
     else: 
         query = query.where(User.id == current_user.id)
 
+    # 4. EXÉCUTION
     result = await db.execute(query)
     users = result.scalars().all()
     
     return templates.TemplateResponse(
-        "users.html", 
+        "admin/users.html", 
         {
             "request": request, 
             "users": users, 
             "current_user": current_user, 
+            "user": current_user,
             "roles": list(Role),
             "sites": list(Site),
             "programmes": list(Programme),
-            "matieres": MATIERES 
+            "matieres_par_prog": MATIERES
         }
     )
 

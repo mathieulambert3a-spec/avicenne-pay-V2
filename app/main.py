@@ -49,12 +49,17 @@ templates.env.globals.update(
 )
 
 # --- INCLUSION DES ROUTEURS ---
-app.include_router(admin.router) 
-app.include_router(auth.router)
-app.include_router(profile.router)
-app.include_router(missions.router)
-app.include_router(declarations.router)
-app.include_router(users.router)
+# --- ESPACE ADMINISTRATION ---
+# Tout ce qui commence par /admin est réservé à la gestion (Admin/Coordo)
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(users.router, prefix="/admin", tags=["Users Management"])
+# app.include_router(missions.router, prefix="/admin", tags=["Missions Management"])
+
+# --- ESPACE UTILISATEUR & COEUR DE MÉTIER ---
+# Routes accessibles selon le rôle, mais sans le label "admin" dans l'URL
+app.include_router(auth.router, tags=["Authentication"])
+app.include_router(profile.router, prefix="/profile", tags=["Profile"])
+app.include_router(declarations.router, prefix="/declarations", tags=["Declarations"])
 
 # --- MIDDLEWARE DE SÉCURITÉ CSP ---
 @app.middleware("http")
@@ -76,7 +81,6 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # --- ROUTES PRINCIPALES ---
-
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return RedirectResponse("/dashboard", status_code=302)

@@ -96,18 +96,45 @@
                         <a class="nav-link" href="/declarations"><i class="bi bi-pen me-1"></i> Mes Déclarations</a>
                     </li>
 
-                    {% if user.role.value == 'admin' %}
+                    {# --- MENU CONFIGURATION (Admin, Coordo, Top COM, Resp) --- #}
+                    {% if user.role.value in ['admin', 'coordo', 'top_com', 'resp'] %}
                         <li class="nav-item dropdown ms-lg-2">
                             <a class="nav-link dropdown-toggle" href="#" id="adminDropdown" role="button" data-bs-toggle="dropdown">
                                 <i class="bi bi-gear-fill me-1"></i> Configuration
                             </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="/admin/users"><i class="bi bi-people text-success me-2"></i>Utilisateurs</a></li>
-                                <li><a class="dropdown-item" href="/admin/referentiel/missions"><i class="bi bi-gear-wide-connected text-warning me-2"></i>Référentiel Missions</a></li>
+                            <ul class="dropdown-menu shadow-sm border-0">
+                                <li>
+                                    <a class="dropdown-item d-flex align-items-center" href="/admin/users">
+                                        <i class="bi bi-people text-success me-2"></i>
+                                        <span>
+                                            {% if user.role.value == 'resp' %}
+                                                Mon Équipe TCP
+                                            {% elif user.role.value == 'top_com' %}
+                                                Mon Équipe COM
+                                            {% elif user.role.value == 'coordo' %}
+                                                Équipe Site ({{ user.site.value }})
+                                            {% else %}
+                                                Utilisateurs
+                                            {% endif %}
+                                        </span>
+                                    </a>
+                                </li>
+                                
+                                {# Missions DA : Uniquement Admin & Coordo #}
+                                {% if user.role.value in ['admin', 'coordo'] %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <a class="dropdown-item d-flex align-items-center" href="/admin/referentiel/missions">
+                                            <i class="bi bi-gear-wide-connected text-warning me-2"></i>Missions DA
+                                        </a>
+                                    </li>
+                                {% endif %}
                             </ul>
                         </li>
+                    {% endif %}
 
-                        {# --- BOUTON PILOTAGE --- #}
+                    {# --- BOUTON PILOTAGE (Uniquement Admin) --- #}
+                    {% if user.role.value == 'admin' %}
                         <li class="nav-item ms-lg-3">
                             <a class="nav-link btn-pilotage" href="/admin/stats">
                                 <i class="bi bi-bar-chart-line-fill me-1"></i> Pilotage

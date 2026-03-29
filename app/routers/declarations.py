@@ -16,7 +16,7 @@ from app.models.sub_mission import SousMission
 from app.models.declaration import Declaration, LigneDeclaration, StatutDeclaration
 from app.common.templates import templates
 
-router = APIRouter(prefix="/declarations")
+router = APIRouter()
 
 
 MOIS_LABELS = {
@@ -44,7 +44,7 @@ def filter_missions_for_user(missions: list, user: User) -> list:
     return filtered_missions
 
 # --- LISTE DES DÉCLARATIONS ---
-# --- LISTE DES DÉCLARATIONS ---
+@router.get("/", response_class=HTMLResponse)
 @router.get("", response_class=HTMLResponse)
 async def list_declarations(
     request: Request,
@@ -56,9 +56,12 @@ async def list_declarations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Base de la requête avec jointure sur User pour filtrer par Site/Matière
-    query = select(Declaration).options(selectinload(Declaration.user)).join(User)
-
+    # On précise à SQLAlchemy d'utiliser la relation 'user' (liée à user_id)
+    query = (
+    select(Declaration)
+    .join(User, Declaration.user_id == User.id) 
+    .options(selectinload(Declaration.user))
+)
     # --- 1. FILTRES DE SÉCURITÉ / RÔLES (Périmètre de visibilité) ---
     if current_user.role == Role.admin:
         # L'admin voit tout par défaut, on ne restreint rien ici
@@ -178,6 +181,7 @@ async def new_declaration_form(
     )
 
 # --- SAUVEGARDE NOUVELLE DÉCLARATION ---
+@router.post("/new/")
 @router.post("/new")
 async def create_declaration(
     request: Request,
@@ -502,6 +506,7 @@ async def edit_declaration_form(
     )
 
 # --- MISE À JOUR ÉDITION (POST) ---
+@router.post("/{decl_id}/edit/")
 @router.post("/{decl_id}/edit")
 async def update_declaration(
     request: Request,

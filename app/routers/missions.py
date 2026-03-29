@@ -265,7 +265,7 @@ async def list_missions(
     missions = result.scalars().all()
     
     return templates.TemplateResponse(
-        "referentiel_missions.html",
+        "missions_da.html",
         {
             "request": request, 
             "user": current_user, 

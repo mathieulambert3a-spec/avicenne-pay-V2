@@ -50,11 +50,18 @@
         {% if request.query_params.get('error') == 'resp_exists' %}
         <div class="alert alert-warning alert-dismissible fade show shadow-sm border-start border-warning border-4" role="alert">
             <i class="bi bi-person-badge-fill me-2"></i>
-            <strong>Conflit de rôle :</strong> Un <strong>Responsable</strong> est déjà affecté à cette matière pour ce programme sur ce site. Il ne peut y avoir qu'un seul responsable par binôme Matière/Site.
+            <strong>Conflit de rôle :</strong> Un <strong>RESP</strong> est déjà affecté à cette matière pour ce programme sur ce site. Il ne peut y avoir qu'un seul responsable par binôme Matière/Site.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         {% endif %}
-
+        {# CAS : DOUBLON DE TOP_COM SUR UN SITE #}
+        {% if request.query_params.get('error') == 'top_com_exists' %}
+        <div class="alert alert-warning alert-dismissible fade show shadow-sm border-start border-warning border-4" role="alert">
+            <i class="bi bi- megaphone-fill me-2"></i>
+            <strong>Conflit de rôle :</strong> Un <strong>TOP COM</strong> est déjà affecté à ce site. Il ne peut y avoir qu'un seul TOP COM par site.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
         {# CAS : ERREUR SYSTÈME GÉNÉRIQUE #}
         {% if request.query_params.get('error') == 'db_error' %}
         <div class="alert alert-danger alert-dismissible fade show shadow-sm border-start border-danger border-4" role="alert">
@@ -129,61 +136,87 @@
                         </button>
                     </div>
                 </div>
-
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Rôle</label>
                     <select name="role" id="roleSelect" class="form-select shadow-sm" required onchange="toggleFields()">
                         <option value="">--</option>
                         {% set u_role = user.role.value if user.role else "" %}
+                        
                         {% if u_role == "admin" %}
                             <option value="admin">Administrateur</option>
                             <option value="coordo">Coordinateur</option>
-                            <option value="resp">Responsable</option>
+                            <option value="top_com">TOP COM</option>
+                            <option value="top">TOP</option>
+                            <option value="resp">RESP</option>
                             <option value="tcp">TCP</option>
+                            <option value="com">COM</option>
                         {% elif u_role == "coordo" %}
-                            <option value="resp">Responsable</option>
+                            <option value="top">TOP</option>
+                            <option value="resp">RESP</option>
                             <option value="tcp">TCP</option>
+                        {% elif u_role == "top_com" %}
+                            <option value="com">COM</option>
                         {% else %}
                             <option value="tcp" selected>TCP</option>
                         {% endif %}
                     </select>
-                </div>
-                
+                </div>            
                 <div class="col-md-2" id="container-site">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Site</label>
+                    
                     {% if u_role == "admin" %}
                         <select name="site" id="siteSelect" class="form-select shadow-sm">
                             <option value="">--</option>
-                            {% for s in sites %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+                            {% for s in sites %}
+                                {# On compare l'objet ou la valeur pour la présélection #}
+                                <option value="{{ s.value }}" {% if user.site == s %}selected{% endif %}>
+                                    {{ s.value.replace('_', ' ').title() }}
+                                </option>
+                            {% endfor %}
                         </select>
                     {% else %}
-                        <div class="p-2 bg-white rounded border small shadow-sm text-truncate">{{ user.site.value if user.site else 'N/A' }}</div>
+                        {# Affichage en texte simple pour les non-admins #}
+                        <div class="p-2 bg-white rounded border small shadow-sm text-truncate">
+                            {{ user.site.value.replace('_', ' ').title() if user.site else 'N/A' }}
+                        </div>
                         <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
                     {% endif %}
                 </div>
                 <div id="container-perimetre" class="col-md-3">
                     <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem;">Périmètre (Prog / Matière)</label>
+                    
                     {% if u_role in ["admin", "coordo"] %}
                         <div class="row g-1">
                             <div class="col-6">
                                 <select name="programme" id="programmeSelect" class="form-select form-select-sm shadow-sm" onchange="updateMatieres()">
                                     <option value="">Programme</option>
-                                    {% for p in programmes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                                    {% for p in programmes %}
+                                        <option value="{{ p.value }}" {% if user.programme == p %}selected{% endif %}>
+                                            {# .upper() pour transformer "pass" en "PASS" #}
+                                            {{ p.value.upper() }}
+                                        </option>
+                                    {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-6">
+                            <div class="col-6" id="matiereWrapper">
                                 <select name="matiere" id="matiereSelect" class="form-select form-select-sm shadow-sm">
                                     <option value="">Matière</option>
+                                    {% if user.matiere %}
+                                        <option value="{{ user.matiere }}" selected>
+                                            {{ user.matiere.replace('_', ' ').title() }}
+                                        </option>
+                                    {% endif %}
                                 </select>
                             </div>
                         </div>
                     {% else %}
                         <div class="d-flex gap-1 text-truncate">
                             <span class="badge bg-primary-subtle text-primary border px-2 py-2 flex-grow-1">
-                                {{ user.programme.value if user.programme else 'N/A' }}
+                                {# Affichage propre en majuscules pour le badge #}
+                                {{ user.programme.value.upper() if user.programme else 'N/A' }}
                             </span>
                             <span class="badge bg-secondary-subtle text-secondary border px-2 py-2 flex-grow-1">
-                                {{ user.matiere or 'N/A' }}
+                                {{ user.matiere.replace('_', ' ').title() if user.matiere else 'N/A' }}
                             </span>
                         </div>
                         <input type="hidden" name="programme" value="{{ user.programme.value if user.programme else '' }}">
@@ -243,7 +276,7 @@
                             Statut <i class="bi bi-arrow-down-up ms-1 small"></i>
                         </th>
                         
-                        {# 6. ACTIONS (Alignée à droite avec padding-end identique au body) #}
+                        {# 6. ACTIONS #}
                         <th class="text-end pe-4" style="width: 140px;">
                             <i class="bi bi-gear-fill me-1"></i>Actions
                         </th>
@@ -273,17 +306,22 @@
                         {# 2. RÔLE (Couleurs uniformisées) #}
                         <td>
                             {% if u.role %}
-                                {% if u.role.value == 'admin' %}
+                                {% set r = u.role.value %}
+                                {% if r == 'admin' %}
                                     <span class="badge rounded-pill bg-danger shadow-sm px-3">ADMIN</span>
-                                {% elif u.role.value == 'coordo' %}
+                                {% elif r == 'coordo' %}
                                     <span class="badge rounded-pill bg-primary shadow-sm px-3">COORDO</span>
-                                {% elif u.role.value == 'resp' %}
+                                {% elif r == 'top_com' %}
+                                    <span class="badge rounded-pill bg-dark shadow-sm px-3 text-white">TOP COM</span>
+                                {% elif r == 'top' %}
+                                    <span class="badge rounded-pill bg-info text-dark shadow-sm px-3">TOP</span>
+                                {% elif r == 'resp' %}
                                     <span class="badge rounded-pill bg-warning text-dark shadow-sm px-3">RESP</span>
-                                {% elif u.role.value == 'tcp' %}
-                                    <span class="badge rounded-pill bg-info text-dark shadow-sm px-3">TCP</span>
+                                {% elif r == 'com' %}
+                                    <span class="badge rounded-pill bg-secondary shadow-sm px-3">COM</span>
+                                {% elif r == 'tcp' %}
+                                    <span class="badge rounded-pill bg-light text-dark border shadow-sm px-3">TCP</span>
                                 {% endif %}
-                            {% else %}
-                                <span class="badge bg-light text-dark border px-3">N/A</span>
                             {% endif %}
                         </td>
 
@@ -340,21 +378,20 @@
                                 </div>
 
                                 <div style="width: 40px;" class="d-flex justify-content-center">
-                                    {# ... reste du code pour l'activation/désactivation (réservé à l'admin) ... #}
-                                    {% if u_role == 'admin' and u.id != user.id %}
-                                        {% if u.is_active %}
-                                            <button type="button" onclick="confirmDesactivation('{{ u.id }}', '{{ u.email }}')" class="btn btn-sm btn-link text-danger p-0 border-0 shadow-none">
-                                                <i class="bi bi-person-x-fill fs-5"></i>
-                                            </button>
-                                            <form id="desac-form-{{ u.id }}" action="/admin/users/{{ u.id }}/desactivate" method="post" style="display: none;"></form>
-                                        {% else %}
-                                            <button type="button" onclick="confirmActivation('{{ u.id }}', '{{ u.email }}')" class="btn btn-sm btn-link text-success p-0 border-0 shadow-none">
-                                                <i class="bi bi-person-check-fill fs-5"></i>
-                                            </button>
-                                            <form id="activ-form-{{ u.id }}" action="/admin/users/{{ u.id }}/activate" method="post" style="display: none;"></form>
-                                        {% endif %}
-                                    {% elif u.id == user.id %}
-                                        <i class="bi bi-shield-check text-muted opacity-25 fs-5"></i>
+                                    {# On vérifie si l'utilisateur a le droit de modifier (Admin, Coordo, Top COM, Resp) #}
+                                    {% if current_user.role.value in ['admin', 'coordo', 'top_com', 'resp'] and u.id != current_user.id %}
+                                        
+                                        <button type="button" 
+                                                onclick="confirmToggle('{{ u.id }}', '{{ u.email }}', '{{ u.is_active }}')" 
+                                                class="btn btn-sm btn-link p-0 border-0 shadow-none {% if u.is_active %}text-danger{% else %}text-success{% endif %}">
+                                            <i class="bi {% if u.is_active %}bi-person-x-fill{% else %}bi-person-check-fill{% endif %} fs-5"></i>
+                                        </button>
+
+                                        {# Formulaire unique pour le Toggle #}
+                                        <form id="toggle-form-{{ u.id }}" action="/users/{{ u.id }}/toggle-status" method="post" style="display: none;"></form>
+
+                                    {% elif u.id == current_user.id %}
+                                        <i class="bi bi-shield-check text-muted opacity-25 fs-5" title="C'est vous !"></i>
                                     {% endif %}
                                 </div>
                             </div>
@@ -399,56 +436,58 @@ function toggleFields() {
     const role = document.getElementById('roleSelect')?.value;
     const s = document.getElementById('container-site');
     const p = document.getElementById('container-perimetre');
-    const f = document.getElementById('container-filiere');
+    const matWrapper = document.getElementById('matiereWrapper');
 
-    // 1. Gestion du Site (Caché pour Admin)
+    // 1. Gestion du Site
     if (s) {
         const isVisible = (role !== 'admin' && role !== '');
         s.style.display = isVisible ? 'block' : 'none';
-        // Si on cache, on remet à zéro pour éviter d'envoyer une donnée inutile
         if (!isVisible) s.querySelector('select, input')?.setAttribute('disabled', 'disabled');
         else s.querySelector('select, input')?.removeAttribute('disabled');
     }
 
-    // 2. Gestion Périmètre & Filière (Caché pour Admin et Coordo)
-    const needsPerimetre = (role === 'resp' || role === 'tcp');
+    // 2. Gestion Périmètre (Prog / Matière)
+    // MODIFICATION ICI : On inclut 'top' dans les rôles qui ont besoin du périmètre
+    const needsPerimetre = (role === 'resp' || role === 'tcp' || role === 'top');
     
     if (p) {
         p.style.display = needsPerimetre ? 'block' : 'none';
-        if (!needsPerimetre) p.querySelectorAll('select').forEach(el => el.value = "");
+        
+        if (needsPerimetre) {
+            // Si c'est un TOP, on cache la colonne Matière mais on laisse le Programme
+            if (role === 'top') {
+                if (matWrapper) matWrapper.style.visibility = 'hidden'; // On cache la matière
+                document.getElementById('programmeSelect').style.width = '100%'; // Le programme prend toute la place
+            } else {
+                if (matWrapper) matWrapper.style.visibility = 'visible'; // On montre la matière pour RESP/TCP
+            }
+        } else {
+            p.querySelectorAll('select').forEach(el => el.value = "");
+        }
     }
+}
+
+function confirmToggle(userId, userEmail, isActive) {
+    // On transforme le string Jinja2 en vrai booléen JS
+    const isNowActive = (isActive === 'True' || isActive === true);
     
-    if (f) {
-        f.style.display = needsPerimetre ? 'block' : 'none';
-    }
-}
-
-function confirmActivation(userId, userEmail) {
     Swal.fire({
-        title: 'Réactiver le compte ?',
-        html: `Voulez-vous redonner l'accès à :<br><strong>${userEmail}</strong>`,
-        icon: 'question',
+        title: isNowActive ? 'Désactiver le compte ?' : 'Réactiver le compte ?',
+        html: isNowActive 
+            ? `Bloquer l'accès pour :<br><strong>${userEmail}</strong>`
+            : `Voulez-vous redonner l'accès à :<br><strong>${userEmail}</strong>`,
+        icon: isNowActive ? 'warning' : 'question',
         showCancelButton: true,
-        confirmButtonColor: '#198754', confirmButtonText: 'Oui, réactiver', cancelButtonText: 'Annuler'
-    }).then((result) => { if (result.isConfirmed) document.getElementById(`activ-form-${userId}`).submit(); });
-}
-
-function confirmDesactivation(userId, userEmail) {
-    Swal.fire({
-        title: 'Désactiver le compte ?',
-        html: `Bloquer l'accès pour :<br><strong>${userEmail}</strong>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545', confirmButtonText: 'Oui, désactiver', cancelButtonText: 'Annuler'
-    }).then((result) => { if (result.isConfirmed) document.getElementById(`desac-form-${userId}`).submit(); });
-}
-
-document.getElementById('searchInput')?.addEventListener('keyup', function() {
-    const filter = this.value.toLowerCase();
-    document.querySelectorAll('#userTable tbody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+        confirmButtonColor: isNowActive ? '#dc3545' : '#198754',
+        confirmButtonText: isNowActive ? 'Oui, désactiver' : 'Oui, réactiver',
+        cancelButtonText: 'Annuler'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // On soumet le formulaire unique de toggle
+            document.getElementById(`toggle-form-${userId}`).submit();
+        }
     });
-});
+}
 
 function sortTable(n) {
     var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;

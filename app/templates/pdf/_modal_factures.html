@@ -1,0 +1,56 @@
+<div class="modal fade" id="modalFactures" tabindex="-1" aria-labelledby="modalFacturesLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark border-0">
+                <h5 class="modal-title fw-bold" id="modalFacturesLabel">
+                    <i class="bi bi-file-earmark-pdf-fill me-2"></i>Génération des factures
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            
+            <form id="formFacturation" action="/admin/generate-factures" method="POST">
+                <div class="modal-body p-4">
+                    <div class="text-center mb-4">
+                        <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                            <i class="bi bi-calendar-range fs-3 text-primary"></i>
+                        </div>
+                        <p class="text-muted small">Sélectionnez la période des missions à facturer. <br>Un fichier ZIP contenant tous les PDF sera généré.</p>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Date de début</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-calendar-event text-muted"></i></span>
+                                <input type="date" name="date_debut" class="form-control border-start-0" required>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Date de fin</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-calendar-check text-muted"></i></span>
+                                <input type="date" name="date_fin" class="form-control border-start-0" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-4 border-0 bg-light mb-0">
+                        <div class="d-flex">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div class="small">
+                                Les factures utiliseront le template <strong>facture_template.html</strong> avec vos informations à jour.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light border-0 px-4 py-3">
+                    <button type="button" class="btn btn-link text-muted text-decoration-none fw-bold" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-warning fw-bold px-4 shadow-sm">
+                        <i class="bi bi-gear-wide-connected me-2"></i>Générer les PDF
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

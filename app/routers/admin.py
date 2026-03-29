@@ -23,7 +23,7 @@ from weasyprint import HTML
 # --- IMPORTS DE SÉCURITÉ ET BDD ---
 from app.database import get_db
 from app.config import FERNET_KEY
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, staff_required
 
 # --- IMPORTS DES MAILS ---
 from app.services.mail import FastMail, MessageSchema, MessageType, conf
@@ -41,7 +41,7 @@ from app.database import AsyncSessionLocal
 # Configuration du logger
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin")
+router = APIRouter()
 
 # Petit utilitaire pour vérifier si l'user est bien admin
 async def check_admin(user: User = Depends(get_current_user)):
@@ -344,52 +344,6 @@ async def get_stats(
         }
     )
 
-# --- GESTION DES UTILISATEURS ---
-@router.get("/users", response_class=HTMLResponse)
-async def list_users(
-    request: Request, 
-    current_user: User = Depends(staff_required), 
-    db: AsyncSession = Depends(get_db)
-):
-    # 1. Construction de la requête de base selon le rôle
-    if current_user.role == Role.admin:
-        # L'admin voit tout le monde (actifs + inactifs)
-        stmt = select(User)
-    elif current_user.role == Role.coordo:
-        # Le coordo voit les actifs de son site
-        stmt = select(User).where(
-            User.site == current_user.site,
-            User.is_active == True
-        )
-    else: # Responsable (Role.resp)
-        # Le resp voit les actifs de sa matière/programme sur son site
-        stmt = select(User).where(
-            User.site == current_user.site,
-            User.programme == current_user.programme,
-            User.matiere == current_user.matiere,
-            User.is_active == True
-        )
-    
-    # 2. Exécution avec tri par ID (ou par Nom pour plus de confort)
-    result = await db.execute(stmt.order_by(User.nom, User.prenom))
-    users = result.scalars().all()
-
-    # 3. Préparation des données pour les formulaires d'ajout/édition
-    # On utilise MATIERES importé de votre modèle pour éviter les doublons
-    from app.models.user import MATIERES, Site 
-
-    return templates.TemplateResponse(
-        "admin/users.html", 
-        {
-            "request": request, 
-            "user": current_user,         
-            "current_user": current_user,
-            "users": users,
-            "sites": [s.value for s in Site],
-            "programmes": list(MATIERES.keys()),
-            "matieres_par_prog": MATIERES
-        }
-    )
 
 @router.post("/users/create")
 async def create_user(
@@ -401,110 +355,101 @@ async def create_user(
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
-    current_user: User = Depends(require_role([Role.admin, Role.coordo, Role.resp])), 
+    current_user: User = Depends(staff_required),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Préparation des données
-    final_role = Role(role)
-    final_site = site
-    final_prog = programme
-    final_matiere = matiere
-
-    if current_user.role == Role.resp:
-        final_role = Role.tcp
-        final_site = current_user.site.value
-        final_prog = current_user.programme.value
-        final_matiere = current_user.matiere
-    elif current_user.role == Role.coordo:
-        final_site = current_user.site.value
-
-    # 2. Tentative de création avec gestion d'erreur précise
+    from app.models.user import Site, Role, Programme # Assure les enums
+    
     try:
+        requested_role = Role(role)
+        # Initialisation par défaut
+        final_role, final_site, final_prog, final_matiere = None, None, None, None
+
+        # --- 1. LOGIQUE DE HIÉRARCHIE ET SÉCURITÉ ---
+        
+        if current_user.role == Role.admin:
+            final_role = requested_role
+            final_site = Site(site) if site else None
+            # Force None pour les rôles COM-centric (pas de matière/prog)
+            if requested_role in [Role.com, Role.top_com]:
+                final_prog, final_matiere = None, None
+            else:
+                final_prog = Programme(programme) if programme else None
+                final_matiere = matiere
+
+        elif current_user.role == Role.coordo:
+            # Le Coordo peut créer TOUT SAUF un Admin ou un autre Coordo sur son site
+            if requested_role in [Role.admin, Role.coordo]:
+                return RedirectResponse("/admin/users?error=unauthorized_role", status_code=303)
+            
+            final_role = requested_role
+            final_site = current_user.site # Force son site
+            
+            if requested_role in [Role.com, Role.top_com]:
+                final_prog, final_matiere = None, None
+            else:
+                final_prog = Programme(programme) if programme else None
+                final_matiere = matiere
+
+        elif current_user.role == Role.top_com:
+            # Le TOP COM ne peut créer QUE des COM
+            if requested_role != Role.com:
+                return RedirectResponse("/admin/users?error=unauthorized_role", status_code=303)
+            
+            final_role = Role.com
+            final_site = current_user.site # Force son site
+            final_prog, final_matiere = None, None # Pas de périmètre pour les COM
+
+        elif current_user.role == Role.resp:
+            # Le RESP ne peut créer que des TCP sur son propre périmètre
+            final_role = Role.tcp
+            final_site = current_user.site
+            final_prog = current_user.programme
+            final_matiere = current_user.matiere
+        
+        else:
+            return RedirectResponse("/admin/users?error=unauthorized", status_code=303)
+
+        # --- 2. CRÉATION EN BASE ---
         new_user = User(
             email=email.lower().strip(),
             hashed_password=pwd_context.hash(password), 
             role=final_role,
-            site=Site(final_site) if final_site else None,
-            programme=Programme(final_prog) if final_prog else None,
+            site=final_site,
+            programme=final_prog,
             matiere=final_matiere,
             is_active=True
         )
+        
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
 
-        # --- LOGIQUE D'ENVOI DE MAIL (CORRIGÉE) ---
+        # --- 3. INVITATION ---
         from app.services.mail import send_welcome_email
-        from app.routers.auth import serializer # On importe le serializer de auth.py
+        from app.routers.auth import serializer
         
-        # On crée un token sécurisé pour cet email
         token = serializer.dumps(new_user.email, salt="password-reset-salt")
-        
-        # On génère le lien qui pointe vers "reset_password_page" (définie dans auth.py)
         setup_link = str(request.url_for("reset_password_page", token=token))
         
-        print(f"DEBUG: Utilisateur {new_user.email} créé.")
-        print(f"DEBUG: Lien d'activation : {setup_link}")
-        
-        # On envoie le mail avec le lien de reset
         background_tasks.add_task(send_welcome_email, new_user.email, setup_link)
-        # ------------------------------------------
 
         return RedirectResponse("/admin/users?msg=created", status_code=303)
 
+    except ValueError:
+        return RedirectResponse("/admin/users?error=invalid_data", status_code=303)
     except IntegrityError as e:
         await db.rollback()
-        error_info = str(e.orig)
+        error_info = str(e.orig).lower()
+        # Gestion des contraintes d'unicité (Ex: 1 seul TOP COM par site)
+        if "uq_top_com_site" in error_info:
+            return RedirectResponse("/admin/users?error=top_com_exists", status_code=303)
         if "uq_resp_site_programme_matiere" in error_info:
             return RedirectResponse("/admin/users?error=resp_exists", status_code=303)
-        elif "users_email_key" in error_info:
+        if "users_email_key" in error_info:
             return RedirectResponse("/admin/users?error=email_exists", status_code=303)
         return RedirectResponse("/admin/users?error=db_error", status_code=303)
-
-    except Exception as e:
-        await db.rollback()
-        print(f"ERREUR CRITIQUE : {e}")
-        return RedirectResponse("/admin/users?error=db_error", status_code=303)
-
-@router.post("/users/{user_id}/desactivate")
-async def desactivate_user(
-    user_id: int, 
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(admin_only)
-):
-    result = await db.execute(select(User).where(User.id == user_id))
-    target_user = result.scalar_one_or_none()
-
-    if not target_user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-
-    if target_user.id == current_user.id:
-        # On ne peut pas se désactiver soi-même
-        return RedirectResponse("/admin/users?error=self_delete", status_code=303)
-
-    # ACTION : On passe le statut à inactif
-    target_user.is_active = False
-    await db.commit()
     
-    return RedirectResponse("/admin/users?msg=disabled", status_code=303)
-
-@router.post("/users/{user_id}/activate")
-async def activate_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user_to_mod = result.scalar_one_or_none()
-    
-    if user_to_mod:
-        try:
-            user_to_mod.is_active = True
-            await db.commit()
-            return RedirectResponse("/admin/users?msg=activated", status_code=303)
-        except IntegrityError:
-            await db.rollback()
-            # On renvoie l'erreur spécifique si un autre RESP est déjà actif
-            return RedirectResponse("/admin/users?error=resp_exists", status_code=303)
-    
-    return RedirectResponse("/admin/users?error=not_found", status_code=303)
-
 # --- EXPORT CSV (Version attachée à stats.html) ---
 @router.get("/export/csv")
 async def export_declarations_csv(
@@ -661,7 +606,7 @@ async def manage_referentiel(
     result = await db.execute(stmt)
     missions = result.scalars().all()
 
-    return templates.TemplateResponse("admin/referentiel_missions.html", {
+    return templates.TemplateResponse("admin/missions_da.html", {
         "request": request,
         "user": current_user,
         "current_user": current_user,
@@ -817,7 +762,6 @@ async def edit_user_save(
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
     password: Optional[str] = Form(None)
-    # J'ai retiré email, nom, prenom, filiere, annee qui ne sont plus dans ton formulaire
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     u = result.scalar_one_or_none()
@@ -826,33 +770,73 @@ async def edit_user_save(
         return RedirectResponse(url="/admin/users?error=notfound", status_code=303)
 
     try:
-        # Mise à jour des permissions et affectations
-        u.role = Role(role)
-        u.site = Site(site) if site and site.strip() else None
-        u.programme = Programme(programme) if programme and programme.strip() else None
-        u.matiere = matiere if matiere and matiere.strip() else None
+        requested_role = Role(role)
+        u.role = requested_role
+        
+        # 1. Gestion du Site (Tout le monde sauf Admin)
+        u.site = Site(site) if site and site.strip() and requested_role != Role.admin else None
 
-        # Sécurité : Si Admin, on nettoie les affectations pédagogiques
-        if u.role == Role.admin:
-            u.site = None
+        # 2. Gestion du Périmètre Pédagogique (Uniquement RESP et TCP)
+        if requested_role in [Role.resp, Role.tcp]:
+            u.programme = Programme(programme) if programme and programme.strip() else None
+            u.matiere = matiere if matiere and matiere.strip() else None
+        else:
+            # On nettoie pour les rôles COM, TOP, COORDO et ADMIN
             u.programme = None
             u.matiere = None
 
-        # Mot de passe (Uniquement si rempli)
+        # 3. Mot de passe
         if password and len(password.strip()) >= 8:
             u.hashed_password = pwd_context.hash(password)
 
         await db.commit()
         return RedirectResponse(url="/admin/users?msg=updated", status_code=303)
 
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
-        # Probablement un doublon de Responsable sur la même matière
-        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=duplicate_resp", status_code=303)
+        error_info = str(e.orig).lower()
+        
+        # Identification précise de la contrainte SQL
+        if "uq_top_com_site" in error_info:
+            return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=top_com_exists", status_code=303)
+        elif "uq_resp_site_programme_matiere" in error_info:
+            return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=resp_exists", status_code=303)
+            
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
+    
     except Exception as e:
         await db.rollback()
         logger.error(f"Erreur edit : {e}")
         return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
+
+
+@router.post("/users/{user_id}/toggle-status")
+async def toggle_user_status(
+    user_id: int,
+    current_user: User = Depends(staff_required),
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. Chercher l'utilisateur
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+
+    if not target_user:
+        return RedirectResponse("/admin/users?error=not_found", status_code=303)
+
+    # 2. Sécurité : Un staff (Coordo/Resp/TopCOM) ne peut pas désactiver un Admin
+    if target_user.role == Role.admin and current_user.role != Role.admin:
+        return RedirectResponse("/admin/users?error=unauthorized", status_code=303)
+    
+    # 3. Sécurité : Un Resp/TopCOM ne peut pas désactiver quelqu'un hors de son site
+    if current_user.role != Role.admin and target_user.site != current_user.site:
+        return RedirectResponse("/admin/users?error=unauthorized_site", status_code=303)
+
+    # 4. Action !
+    target_user.is_active = not target_user.is_active
+    await db.commit()
+
+    msg = "activated" if target_user.is_active else "disabled"
+    return RedirectResponse(f"/admin/users?msg={msg}", status_code=303)
 
 # -pdf executor ---
 pdf_executor = ThreadPoolExecutor(max_workers=1)
@@ -1053,54 +1037,6 @@ async def main_reminder_logic():
                 except Exception as e:
                     print(f"Erreur relance {user.email}: {e}")
 
-# --- LA ROUTE POUR TON BOUTON ---
-@router.post("/users/add")
-async def db_add_user(
-    request: Request, 
-    background_tasks: BackgroundTasks,
-    email: str = Form(...),
-    nom: str = Form(...),
-    db: AsyncSession = Depends(get_db)
-):
-    # 1. VÉRIFICATION : L'utilisateur existe-t-il déjà ?
-    query = await db.execute(select(User).where(User.email == email))
-    existing_user = query.scalar_one_or_none()
-
-    if existing_user:
-        # On retourne sur le formulaire avec un message d'erreur
-        # Assure-toi que ton template 'user_form.html' affiche la variable 'error'
-        return templates.TemplateResponse(
-            "user_form.html", 
-            {
-                "request": request, 
-                "error": f"L'adresse email {email} est déjà utilisée.",
-                "values": {"email": email, "nom": nom} # Pour ne pas vider les champs
-            }
-        )
-
-    # 2. CRÉATION (si tout est OK)
-    new_user = User(
-        email=email,
-        nom=nom,
-        is_active=True,
-        hashed_password="!" # Bloqué jusqu'au premier reset
-    )
-    
-    db.add(new_user)
-    await db.commit()
-
-   # 3. GÉNÉRATION DU TOKEN ET ENVOI MAIL
-    from app.routers.auth import serializer 
-    
-    token = serializer.dumps(email, salt="password-reset-salt")
-    setup_link = str(request.url_for("reset_password_page", token=token))
-
-    from app.services.mail import send_welcome_email
-
-    print(f"DEBUG: Tentative d'envoi de mail à {email}")
-    print(f"DEBUG: Lien généré : {setup_link}")
-    
-    background_tasks.add_task(send_welcome_email, email, setup_link)
 
 @router.post("/relance-retardataires")
 async def relance_retardataires(

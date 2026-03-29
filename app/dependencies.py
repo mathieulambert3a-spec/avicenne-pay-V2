@@ -103,3 +103,5 @@ async def validate_user_creation_rights(
         )
 
     return True
+
+staff_required = require_role([Role.admin, Role.coordo, Role.top_com, Role.resp])

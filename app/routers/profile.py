@@ -10,7 +10,7 @@ from app.dependencies import get_current_user
 from app.models.user import User, Filiere, Annee, Site, Programme, MATIERES
 from app.common.templates import templates
 
-router = APIRouter(prefix="/profile")
+router = APIRouter()
 
 def get_fernet():
     if FERNET_KEY:
@@ -33,6 +33,7 @@ def decrypt(value: str, f: Optional[Fernet]) -> str:
     return value or ""
 
 
+@router.get("/", response_class=HTMLResponse)
 @router.get("", response_class=HTMLResponse)
 async def profile_page(request: Request, current_user: User = Depends(get_current_user)):
     f = get_fernet()
@@ -76,72 +77,105 @@ async def update_profile(
 ):
     f = get_fernet()
     
-    # --- 1. Mise à jour des informations de base (Libre) ---
-    current_user.nom = nom or current_user.nom
-    current_user.prenom = prenom or current_user.prenom
-    current_user.adresse = adresse or current_user.adresse
-    current_user.code_postal = code_postal or current_user.code_postal
-    current_user.ville = ville or current_user.ville
-    current_user.telephone = telephone or current_user.telephone
+    # --- 1. Mise à jour des informations de base (Avec formatage) ---
+    if nom: current_user.nom = nom.strip().upper()
+    if prenom: current_user.prenom = prenom.strip().capitalize()
+    if adresse: current_user.adresse = adresse.strip()
+    if code_postal: current_user.code_postal = code_postal.strip()
+    if ville: current_user.ville = ville.strip().upper()
+    if telephone: current_user.telephone = telephone.strip()
 
-    # --- 2. Données sensibles (on ne touche que si fourni) ---
+    # --- 2. Données sensibles (NETTOYAGE JS ET CHIFFREMENT) ---
     if nss:
-        current_user.nss_encrypted = encrypt(nss, f)
+        # On retire les espaces et les barres "|" ajoutés par le masque de saisie JS
+        clean_nss = nss.replace(" ", "").replace("|", "")
+        current_user.nss_encrypted = encrypt(clean_nss, f)
+    else:
+        pass
+        
     if iban:
-        current_user.iban_encrypted = encrypt(iban, f)
+        # On retire les espaces du JS et on force les majuscules
+        clean_iban = iban.replace(" ", "").upper()
+        current_user.iban_encrypted = encrypt(clean_iban, f)
 
     # --- 3. Affectations Académiques (SÉCURISÉES) ---
-    # Seuls Admin et Coordo peuvent modifier Site, Programme et Matière
     if current_user.role.value in ['admin', 'coordo']:
         if site:
-            current_user.site = Site(site)
+            try: current_user.site = Site(site)
+            except ValueError: pass
         if programme:
-            current_user.programme = Programme(programme)
+            try: current_user.programme = Programme(programme)
+            except ValueError: pass
             current_user.matiere = matiere or None
-    else:
-        # Optionnel : loguer une tentative de modification non autorisée ici
-        pass
 
     # --- 4. Autres infos académiques (Libres pour RESP/TCP) ---
     if filiere:
-        current_user.filiere = Filiere(filiere)
+        try: current_user.filiere = Filiere(filiere)
+        except ValueError: pass
     if annee:
-        current_user.annee = Annee(annee)
+        try: current_user.annee = Annee(annee)
+        except ValueError: pass
 
+    # --- [JUSTE AVANT LE BLOC 5] Préparation du dictionnaire de contexte ---
+    # On le prépare ici pour pouvoir le réutiliser en cas d'erreur ou de succès
+    nss_display = decrypt(current_user.nss_encrypted or "", f)
+    iban_display = decrypt(current_user.iban_encrypted or "", f)
+
+    context = {
+        "request": request,
+        "user": current_user,
+        "nss": nss_display,
+        "iban": iban_display,
+        "filieres": list(Filiere),
+        "annees": list(Annee),
+        "sites": list(Site),
+        "programmes": list(Programme),
+        "matieres": MATIERES,
+    }
     # --- 5. Statut de complétude ---
     success_msg = "Profil mis à jour avec succès."
     
+    # --- 5. Statut de complétude & Sauvegarde ---
+    # On calcule la complétude réelle basée sur les données qui viennent d'être injectées
+    is_really_complete = current_user.is_payment_profile_complete_logic
+    
     if profil_complete == "on":
-        # Champs obligatoires pour TOUT LE MONDE
-        champs_communs = [current_user.nom, current_user.prenom, current_user.ville]
-        base_ok = all(val and str(val).strip() for val in champs_communs)
-
-        # Champs spécifiques au PAIEMENT (Uniquement pour Resp et TCP)
-        paiement_ok = True
-        if current_user.role.value in ['resp', 'tcp']:
-            champs_paiement = [current_user.nss_encrypted, current_user.iban_encrypted]
-            paiement_ok = all(val and str(val).strip() for val in champs_paiement)
-
-        # Validation finale
-        if base_ok and paiement_ok:
+        # Si l'utilisateur a cliqué sur "Valider et finaliser"
+        if is_really_complete:
             current_user.profil_complete = True
-            success_msg = "Profil validé et finalisé !"
+            success_msg = "Félicitations ! Votre profil est désormais complet et validé."
         else:
             current_user.profil_complete = False
-            if not paiement_ok:
-                success_msg = "Profil sauvegardé, mais incomplet : les informations de paiement sont obligatoires pour vos vacations."
+            # On affine le message d'erreur selon ce qui manque
+            if current_user.role.value in ['resp', 'tcp'] and not (current_user.nss_encrypted and current_user.iban_encrypted):
+                success_msg = "Profil sauvegardé, mais incomplet : les informations de paiement (NSS/IBAN) sont obligatoires."
             else:
-                success_msg = "Profil sauvegardé, mais incomplet : veuillez remplir les champs d'identité obligatoires."
+                success_msg = "Profil sauvegardé, mais incomplet : veuillez vérifier votre identité (Nom, Prénom, Ville)."
     else:
-        # Si on ne coche pas la case de finalisation, on garde le statut actuel 
-        # ou on repasse en False si vous voulez forcer une nouvelle validation
-        current_user.profil_complete = current_user.profil_complete 
-        success_msg = "Modifications enregistrées."
+        # Si c'est une mise à jour "classique" (Admin ou profil déjà validé)
+        # On s'assure que si l'utilisateur vide un champ obligatoire, le statut 'profil_complete' repasse à False
+        if current_user.profil_complete and not is_really_complete:
+            current_user.profil_complete = False
+            success_msg = "Modifications enregistrées. Attention : votre profil n'est plus considéré comme complet."
+        else:
+            success_msg = "Profil mis à jour avec succès."
+
+    # Sauvegarde finale en base de données
+    try:
+        await db.commit()
+        await db.refresh(current_user)
+    except Exception as e:
+        await db.rollback()
+        # On pourrait logger l'erreur ici
+        return templates.TemplateResponse(
+            "profile.html", 
+            {**context, "error": "Erreur lors de la sauvegarde. Veuillez réessayer."}
+        )
 
     await db.commit()
     await db.refresh(current_user)
 
-    # Préparation de l'affichage
+    # Préparation du déchiffrement pour l'affichage post-enregistrement
     nss_display = decrypt(current_user.nss_encrypted or "", f)
     iban_display = decrypt(current_user.iban_encrypted or "", f)
 

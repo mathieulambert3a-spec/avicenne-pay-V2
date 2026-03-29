@@ -19,46 +19,74 @@
             </span>
         {% endif %}
     </div>
+    {# --- BLOC D'AVERTISSEMENT PROFIL INCOMPLET --- #}
+    {% if user.role.value != 'admin' and not user.profil_complete %}
+    <div class="alert alert-danger border-0 shadow-sm mb-4">
+        <div class="d-flex">
+            <i class="bi bi-shield-exclamation fs-3 me-3"></i>
+            <div>
+                <h5 class="alert-heading fw-bold">Action requise : Paiement bloqué</h5>
+                <p class="mb-2">Votre profil n'est pas encore conforme. Pour pouvoir saisir vos vacations, les informations suivantes sont obligatoires :</p>
+                <div class="row small">
+                    <div class="col-md-6">
+                        <ul class="mb-0">
+                            {# On utilise la logique Python pour barrer si NOM et PRENOM sont là #}
+                            <li class="{% if user.nom and user.prenom %}text-decoration-line-through text-success{% endif %}">
+                                Nom et Prénom
+                            </li>
+                            {# On barre si ADRESSE et VILLE sont là #}
+                            <li class="{% if user.adresse and user.ville %}text-decoration-line-through text-success{% endif %}">
+                                Adresse postale complète
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul class="mb-0">
+                            {# Ici, on vérifie la présence des données déchiffrées passées par la route #}
+                            <li class="{% if nss %}text-decoration-line-through text-success{% endif %}">
+                                Numéro de Sécurité Sociale (NSS)
+                            </li>
+                            <li class="{% if iban %}text-decoration-line-through text-success{% endif %}">
+                                RIB (IBAN)
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <hr>
 
-    {% if success %}
-    <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-check-circle-fill fs-4 me-3"></i>
-            <div>{{ success }}</div>
+                {# MESSAGE DYNAMIQUE SELON LE REMPLISSAGE #}
+                {% if user.is_payment_profile_complete_logic %}
+                    <p class="mb-0 fw-bold text-success animate-pulse">
+                        <i class="bi bi-check-all me-1"></i> Tous les champs sont saisis ! Cliquez maintenant sur <strong>"Valider et finaliser mon profil"</strong> ci-dessous.
+                    </p>
+                {% else %}
+                    <p class="mb-0 small italic">
+                        <i class="bi bi-info-circle me-1"></i> Une fois remplis, cliquez sur <strong>"Valider et finaliser mon profil"</strong> en bas de page.
+                    </p>
+                {% endif %}
+            </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {# --- MESSAGES DE SUCCÈS/ERREUR  --- #}
+    {% if success %}
+    <div class="alert bg-success-subtle border-0 shadow-sm mb-4 py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+            <div class="fw-bold text-success">{{ success }}</div>
+        </div>
     </div>
     {% endif %}
 
-    {# --- BLOC D'AVERTISSEMENT PROFIL INCOMPLET --- #}
-    {% if user.role.value in ['resp', 'tcp'] and not user.profil_complete %}
-        <div class="alert alert-danger border-0 shadow-sm mb-4">
-            <div class="d-flex">
-                <i class="bi bi-shield-exclamation fs-3 me-3"></i>
-                <div>
-                    <h5 class="alert-heading fw-bold">Action requise : Paiement bloqué</h5>
-                    <p class="mb-2">Votre profil n'est pas encore conforme. Pour pouvoir saisir vos vacations, les informations suivantes sont obligatoires :</p>
-                    <div class="row small">
-                        <div class="col-md-6">
-                            <ul class="mb-0">
-                                <li class="{% if user.nom and user.prenom %}text-decoration-line-through text-success{% endif %}">Nom et Prénom</li>
-                                <li class="{% if user.adresse and user.ville %}text-decoration-line-through text-success{% endif %}">Adresse postale complète</li>
-                            </ul>
-                        </div>
-                        <div class="col-md-6">
-                            <ul class="mb-0">
-                                <li class="{% if nss %}text-decoration-line-through text-success{% endif %}">Numéro de Sécurité Sociale (NSS)</li>
-                                <li class="{% if iban %}text-decoration-line-through text-success{% endif %}">RIB (IBAN)</li>
-                            </ul>
-                        </div>
-                    </div>
-                    <hr>
-                    <p class="mb-0 small italic"><i class="bi bi-info-circle me-1"></i> Une fois remplis, cliquez sur <strong>"Valider et finaliser mon profil"</strong> en bas de page.</p>
-                </div>
-            </div>
+    {% if error %}
+    <div class="alert bg-soft-danger border-0 shadow-sm mb-4 py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-exclamation-octagon-fill fs-4 me-3"></i>
+            <div class="fw-bold">{{ error }}</div>
         </div>
+    </div>
     {% endif %}
-
     <form method="post" action="/profile" autocomplete="off">
         <div class="row">
             
@@ -114,9 +142,9 @@
     {# --- COLONNE DROITE : DONNÉES SENSIBLES & ACADÉMIQUES --- #}
     <div class="col-lg-6">
         
-        {# --- 1. INFORMATIONS DE PAIEMENT (Masquées pour Admin et Coordo) --- #}
-        {# On ne montre le NSS/IBAN que si l'utilisateur édité est un RESP ou un TCP #}
-        {% if user.role.value in ['resp', 'tcp'] %}
+        {# --- 1. INFORMATIONS DE PAIEMENT (Masquées uniquement pour Admin) --- #}
+        {# Le bloc apparaît pour tous les rôles (Coordo, TOP, TOP_COM, COM, RESP, TCP) sauf Admin #}
+        {% if user.role.value != 'admin' %}
         <div class="card mb-4 border-0 shadow-sm border-start border-danger border-4">
             <div class="card-header bg-white fw-bold py-3 text-danger">
                 <i class="bi bi-shield-lock-fill me-2"></i> Données de Paiement (Sécurisées)
@@ -146,117 +174,108 @@
         </div>
         {% endif %}
 
-{# --- 2. INFORMATIONS ACADÉMIQUES (Visible par tous, mais contenu adapté) --- #}
+        {# --- 2. INFORMATIONS ACADÉMIQUES --- #}
         <div class="card mb-4 border-0 shadow-sm border-start border-success border-4">
             <div class="card-header bg-white fw-bold py-3 text-success">
                 <i class="bi bi-mortarboard-fill me-2"></i> Affectation Académique
             </div>
             <div class="card-body">
-                {# CAS A : L'utilisateur édité est ADMIN #}
                 {% if user.role.value == 'admin' %}
                     <div class="alert alert-light border-0 mb-0">
                         <i class="bi bi-shield-check text-primary me-2"></i> 
-                        <strong>Administrateur :</strong> Accès total à tous les sites et programmes.
+                        <strong>Administrateur :</strong> Accès total à tous les sites.
                     </div>
-                {# CAS B : L'utilisateur édité est COORDO #}
-                {% elif user.role.value == 'coordo' %}
+                {% else %}
+                    {# --- LE SITE : Toujours visible pour tous (TOP, Coordo, RESP...) --- #}
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-secondary">Site d'affectation</label>
-                        <select name="site" class="form-select border-success-subtle">
-                            <option value="">-- Aucun site --</option>
-                            {% for s in sites %}
-                                <option value="{{ s.value }}" {% if user.site and user.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
-                            {% endfor %}
+                        <select name="site" class="form-select bg-light text-muted" disabled>
+                            <option value="{{ user.site.value if user.site else '' }}">
+                                {{ user.site.value if user.site else '-- Aucun site --' }}
+                            </option>
                         </select>
+                        <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
                     </div>
-                    <div class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info-subtle">
-                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Mode Coordinateur :</strong> Gestion de l'ensemble des programmes du site.
-                    </div>
-                {# CAS C : L'utilisateur édité est RESP ou TCP #}
-                {% else %}
-                    {% set is_restricted = user.role.value in ['resp', 'tcp'] %}
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-secondary">Site principal</label>
-                        <select name="site" class="form-select {% if is_restricted %}bg-light text-muted{% endif %}" 
-                            {% if is_restricted %}disabled{% endif %}>
-                            <option value="">-- Sélectionner un site --</option>
-                            {% for s in sites %}
-                            <option value="{{ s.value }}" {% if user.site and user.site.value == s.value %}selected{% endif %}>{{ s.value }}</option>
-                            {% endfor %}
-                        </select>
-                        {% if is_restricted %}
-                            <input type="hidden" name="site" value="{{ user.site.value if user.site else '' }}">
-                            <div class="form-text small italic text-muted"><i class="bi bi-lock-fill"></i> Géré par l'administration.</div>
-                        {% endif %}
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Ma filière</label>
-                            <select name="filiere" class="form-select">
-                                <option value="">-- Sélectionner --</option>
-                                {% for f in filieres %}
-                                <option value="{{ f.value }}" {% if user.filiere and user.filiere.value == f.value %}selected{% endif %}>{{ f.value }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Année d'étude</label>
-                            <select name="annee" class="form-select">
-                                <option value="">-- Sélectionner --</option>
-                                {% for a in annees %}
-                                <option value="{{ a.value }}" {% if user.annee and user.annee.value == a.value %}selected{% endif %}>{{ a.value }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
+
+                    {# --- LE PROGRAMME : Uniquement pour TOP, RESP et TCP --- #}
+                    {# On EXCLUT explicitement le coordo ici #}
+                    {% if user.role.value in ['top', 'resp', 'tcp'] %}
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-secondary">Programme d'enseignement</label>
-                        <select name="programme" id="programmeSelect" onchange="updateMatieres()"
-                            class="form-select {% if is_restricted %}bg-light text-muted{% endif %}" 
-                            {% if is_restricted %}disabled{% endif %}>
-                            <option value="">-- Sélectionner --</option>
-                            {% for p in programmes %}
-                            <option value="{{ p.value }}" {% if user.programme and user.programme.value == p.value %}selected{% endif %}>{{ p.value }}</option>
-                            {% endfor %}
+                        <select name="programme" id="programmeSelect" class="form-select bg-light text-muted" disabled>
+                            <option value="{{ user.programme.value if user.programme else '' }}">
+                                {{ user.programme.value if user.programme else '-- Aucun programme --' }}
+                            </option>
                         </select>
-                        {% if is_restricted %}
-                            <input type="hidden" name="programme" value="{{ user.programme.value if user.programme else '' }}">
-                        {% endif %}
+                        <input type="hidden" name="programme" value="{{ user.programme.value if user.programme else '' }}">
                     </div>
-                    <div class="mb-1">
-                        <label class="form-label small fw-bold text-secondary">Matière / Spécialité</label>
-                        <select name="matiere" id="matiereSelect" 
-                            class="form-select {% if is_restricted %}bg-light text-muted{% endif %}"
-                            {% if is_restricted %}disabled{% endif %}>
-                            <option value="">-- Choisir d'abord un programme --</option>
-                        </select>
-                        {% if is_restricted %}
+                    {% endif %}
+
+                    {# --- FILIÈRE / ANNÉE / MATIÈRE : Uniquement pour RESP et TCP (étudiants) --- #}
+                    {% if user.role.value in ['resp', 'tcp'] %}
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-secondary">Ma filière</label>
+                                <select name="filiere" class="form-select">
+                                    <option value="">-- Sélectionner --</option>
+                                    {% for f in filieres %}
+                                        <option value="{{ f.value }}" {% if user.filiere and user.filiere.value == f.value %}selected{% endif %}>{{ f.value }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-secondary">Année d'étude</label>
+                                <select name="annee" class="form-select">
+                                    <option value="">-- Sélectionner --</option>
+                                    {% for a in annees %}
+                                        <option value="{{ a.value }}" {% if user.annee and user.annee.value == a.value %}selected{% endif %}>{{ a.value }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label small fw-bold text-secondary">Matière / Spécialité</label>
+                            <select name="matiere" id="matiereSelect" class="form-select bg-light text-muted" disabled>
+                                <option value="{{ user.matiere or '' }}">{{ user.matiere or '-- Choisir un programme --' }}</option>
+                            </select>
                             <input type="hidden" name="matiere" value="{{ user.matiere or '' }}">
-                        {% endif %}
+                        </div>
+                    {% endif %}
+
+                    {# --- NOTE D'INFORMATION POUR LES COORDOS --- #}
+                    {% if user.role.value == 'coordo' %}
+                    <div class="alert alert-info py-2 px-3 mt-2 mb-0 small border-0 bg-info-subtle">
+                        <i class="bi bi-info-circle-fill me-2"></i> 
+                        <strong>Note :</strong> En tant que Coordo, vous supervisez <strong>l'ensemble des programmes</strong> de votre site.
                     </div>
+                    {% endif %}
+
                 {% endif %}
             </div>
         </div>
         {# --- ACTIONS DU FORMULAIRE --- #}
         <div class="card border-0 shadow-sm bg-light mt-3">
             <div class="card-body d-flex justify-content-end">
+                {# CAS ADMIN : Bouton classique d'enregistrement #}
                 {% if user.role.value == 'admin' %}
                     <button type="submit" class="btn btn-primary px-5 py-2 shadow-sm fw-bold">
                         <i class="bi bi-save2 me-2"></i> Enregistrer les modifications
                     </button>
                 {% else %}
+                    {# CAS TOUS LES AUTRES : Bouton dynamique selon le statut de complétude #}
                     <button type="submit" name="profil_complete" value="on" 
                         class="btn {% if user.profil_complete %}btn-success{% else %}btn-danger animate-pulse{% endif %} px-5 py-2 shadow-sm fw-bold">
                         {% if user.profil_complete %}
                             <i class="bi bi-check-circle me-2"></i> Mettre à jour le profil
                         {% else %}
-                            <i class="bi bi-send-check me-2"></i> Valider et finaliser le profil
+                            {# Ce bouton est crucial pour déclencher le passage de 'profil_complete' à True en DB #}
+                            <i class="bi bi-send-check me-2"></i> Valider et finaliser mon profil
                         {% endif %}
                     </button>
                 {% endif %}
             </div>
         </div>
-    </div> {# Fin de la colonne de droite #}
+    </div>
     </form>
     {% endblock %}
 
@@ -289,11 +308,12 @@
     function toggleVisibility(fieldId, btn) {
         const field = document.getElementById(fieldId);
         const icon = btn.querySelector('i');
-        if (field.type === 'password') {
-            field.type = 'text';
+        
+        if (field.type === "password") {
+            field.type = "text";
             icon.classList.replace('bi-eye', 'bi-eye-slash');
         } else {
-            field.type = 'password';
+            field.type = "password";
             icon.classList.replace('bi-eye-slash', 'bi-eye');
         }
     }
