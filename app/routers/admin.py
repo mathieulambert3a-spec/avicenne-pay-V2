@@ -49,11 +49,16 @@ async def check_admin(user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Accès interdit")
     return user
 
-# --- SÉCURITÉ : Définition des niveaux d'accès ---
-staff_required = require_role([Role.admin, Role.coordo, Role.resp])
-delete_allowed = require_role([Role.admin, Role.coordo])
+# --- SÉCURITÉ ---
+delete_allowed = require_role([Role.admin, Role.coordo, Role.top_com])
 admin_only = require_role([Role.admin])
 catalogue_manager = require_role([Role.admin, Role.coordo])
+
+# Edition des fiches utilisateurs
+user_editor = require_role([Role.admin, Role.coordo, Role.top_com])
+
+# POUR LA V3 (Anticipation) :
+mission_manager = require_role([Role.admin, Role.coordo, Role.top_com])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -731,7 +736,7 @@ async def edit_user_form(
     request: Request, 
     user_id: int, 
     db: AsyncSession = Depends(get_db),
-    current_admin: User = Depends(catalogue_manager)
+    current_admin: User = Depends(user_editor)
 ):
     user_to_edit = await db.get(User, user_id)
     if not user_to_edit:
@@ -741,28 +746,35 @@ async def edit_user_form(
     clean_matieres = {str(k): v for k, v in MATIERES.items()}
 
     return templates.TemplateResponse("admin/user_form.html", {
-        "request": request,
-        "u": user_to_edit,
-        "user": current_admin, # Admin connecté
-        "roles": [r.value for r in Role],
-        "sites": [s.value for s in Site],
-        "programmes": [p.value for p in Programme],
-        "filieres": [f.value for f in Filiere],
-        "annees": [a.value for a in Annee],
-        "matieres_par_prog": clean_matieres
+    "request": request,
+    "u": user_to_edit,
+    "current_user": current_admin,
+    "roles": [r.value for r in Role],
+    "sites": [s.value for s in Site],
+    "programmes": [p.value for p in Programme],
+    "filieres": [f.value for f in Filiere],
+    "annees": [a.value for a in Annee],
+    "matieres_par_prog": clean_matieres
     })
 
 @router.post("/users/{user_id}/edit")
 async def edit_user_save(
     user_id: int,
     db: AsyncSession = Depends(get_db), 
-    admin: User = Depends(check_admin),
+    admin: User = Depends(user_editor),
     role: str = Form(...),
     site: Optional[str] = Form(None),
     programme: Optional[str] = Form(None),
     matiere: Optional[str] = Form(None),
     password: Optional[str] = Form(None)
 ):
+    # --- SÉCURITÉ SUPPLÉMENTAIRE ---
+    # On bloque l'accès si l'utilisateur connecté n'est ni ADMIN ni COORDO
+    # Cela protège contre les requêtes POST manuelles (ex: via Postman ou console JS)
+    if admin.role.value not in ["admin", "coordo"]:
+        logger.warning(f"Tentative de modification non autorisée par l'utilisateur ID {admin.id}")
+        return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=unauthorized", status_code=303)
+
     result = await db.execute(select(User).where(User.id == user_id))
     u = result.scalar_one_or_none()
     
@@ -797,10 +809,11 @@ async def edit_user_save(
         error_info = str(e.orig).lower()
         
         # Identification précise de la contrainte SQL
+        # Adapté pour correspondre aux codes d'erreur renvoyés par tes redirections
         if "uq_top_com_site" in error_info:
             return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=top_com_exists", status_code=303)
         elif "uq_resp_site_programme_matiere" in error_info:
-            return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=resp_exists", status_code=303)
+            return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=duplicate_resp", status_code=303)
             
         return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
     
@@ -808,7 +821,6 @@ async def edit_user_save(
         await db.rollback()
         logger.error(f"Erreur edit : {e}")
         return RedirectResponse(url=f"/admin/users/{user_id}/edit?error=db_error", status_code=303)
-
 
 @router.post("/users/{user_id}/toggle-status")
 async def toggle_user_status(

@@ -51,6 +51,15 @@ async def list_users(
         pass 
     elif current_user.role == Role.coordo:
         query = query.where(User.site == current_user.site)
+    elif current_user.role == Role.top_com:
+        # Le TOP COM voit lui-même ET tous les COM de son site
+        query = query.where(
+            User.site == current_user.site,
+            or_(
+                User.role == Role.com,
+                User.id == current_user.id
+            )
+        )
     elif current_user.role == Role.resp:
         query = query.where(
             or_(

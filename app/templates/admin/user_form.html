@@ -3,6 +3,7 @@
 {% block title %}Administration – {{ u.email }}{% endblock %}
 
 {% block content %}
+{% set can_edit = current_user.role.value in ['admin', 'coordo'] %}
 <div class="container py-4">
     {# --- FIL D'ARIANE --- #}
     <nav aria-label="breadcrumb" class="mb-4">
@@ -23,15 +24,20 @@
                 </div>
 
                 <div class="card-body p-4 bg-light">
+                    {# --- LOGIQUE DE PERMISSION (ADMINS & COORDOS UNIQUEMENT) --- #}
+                    {% set can_edit = current_user.role.value in ['admin', 'coordo'] %}
+
                     {% if request.query_params.get('error') == 'duplicate_resp' %}
                     <div class="alert alert-danger shadow-sm border-start border-4 border-danger">
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
                         <strong>Erreur d'affectation :</strong> Un Responsable est déjà enregistré pour cette matière sur ce site.
                     </div>
                     {% endif %}
+
                     <form action="/admin/users/{{ u.id }}/edit" method="post" class="row g-4">
                         <input type="hidden" name="email" value="{{ u.email }}">
-                        {# --- SECTION 1 : IDENTITÉ (LECTURE SEULE / NON MODIFIABLE) --- #}
+                        
+                        {# --- SECTION 1 : IDENTITÉ (LECTURE SEULE) --- #}
                         <div class="col-12">
                             <div class="card border-0 bg-white-50 border-start border-4 border-secondary shadow-sm">
                                 <div class="card-body py-3">
@@ -68,10 +74,11 @@
                                 </div>
                             </div>
                         </div>
-                        {# --- SECTION 2 : RÔLE & SITE (MODIFIABLES) --- #}
+
+                        {# --- SECTION 2 : RÔLE & SITE --- #}
                         <div class="col-md-6 mt-4">
                             <label class="form-label small fw-bold text-uppercase text-primary">Rôle Système</label>
-                            <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm">
+                            <select name="role" id="roleSelect" class="form-select border-primary-subtle shadow-sm" {% if not can_edit %}disabled{% endif %}>
                                 {% for r in roles %}
                                 <option value="{{ r }}" {% if u.role|string == r|string %}selected{% endif %}>{{ r|upper }}</option>
                                 {% endfor %}
@@ -81,7 +88,7 @@
 
                         <div class="col-md-6 mt-4 section-collaborateur">
                             <label class="form-label small fw-bold text-uppercase">Site d'affectation</label>
-                            <select name="site" class="form-select shadow-sm">
+                            <select name="site" class="form-select shadow-sm" {% if not can_edit %}disabled{% endif %}>
                                 <option value="">-- Aucun site --</option>
                                 {% for s in sites %}
                                 <option value="{{ s }}" {% if u.site|string == s|string %}selected{% endif %}>{{ s }}</option>
@@ -89,7 +96,7 @@
                             </select>
                         </div>
 
-                        {# --- SECTION 3 : PÉRIMÈTRE D'ENSEIGNEMENT (MODIFIABLES) --- #}
+                        {# --- SECTION 3 : PÉRIMÈTRE D'ENSEIGNEMENT --- #}
                         <div class="col-12 section-collaborateur">
                             <div class="card border-primary-subtle shadow-sm bg-white">
                                 <div class="card-body">
@@ -97,7 +104,7 @@
                                     <div class="row g-3">
                                         <div class="col-md-6">
                                             <label class="form-label small fw-bold"><i class="bi bi-book me-1"></i>Programme</label>
-                                            <select name="programme" id="programmeSelect" class="form-select">
+                                            <select name="programme" id="programmeSelect" class="form-select" {% if not can_edit %}disabled{% endif %}>
                                                 <option value="">-- Sélectionner un programme --</option>
                                                 {% for p in programmes %}
                                                 <option value="{{ p }}" {% if u.programme|string == p|string %}selected{% endif %}>{{ p }}</option>
@@ -106,7 +113,7 @@
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label small fw-bold"><i class="bi bi-tags me-1"></i>Matière / UE</label>
-                                            <select name="matiere" id="matiereSelect" class="form-select">
+                                            <select name="matiere" id="matiereSelect" class="form-select" {% if not can_edit %}disabled{% endif %}>
                                                 {# Rempli dynamiquement par JS #}
                                             </select>
                                         </div>
@@ -120,13 +127,24 @@
                         </div>
 
                         {# --- ACTIONS --- #}
-                        <div class="col-12 d-flex justify-content-between mt-5 pt-3 border-top">
+                        <div class="col-12 d-flex justify-content-between mt-5 pt-3 border-top align-items-center">
+                            {# Bouton de retour toujours visible #}
                             <a href="/admin/users" class="btn btn-outline-secondary px-4 rounded-pill">
-                                <i class="bi bi-arrow-left me-1"></i> Retour
+                                <i class="bi bi-arrow-left me-1"></i> Retour à la liste
                             </a>
-                            <button type="submit" class="btn btn-primary px-5 shadow rounded-pill fw-bold">
-                                <i class="bi bi-save me-1"></i> Enregistrer les modifications
-                            </button>
+
+                            {# Vérification des droits : Seuls ADMIN et COORDO peuvent enregistrer #}
+                            {% if current_user.role.value in ['admin', 'coordo'] %}
+                                <button type="submit" class="btn btn-primary px-5 shadow rounded-pill fw-bold">
+                                    <i class="bi bi-save me-1"></i> Enregistrer les modifications
+                                </button>
+                            {% else %}
+                                {# Message pour TOP_COM, RESP, etc. #}
+                                <div class="alert alert-info py-2 px-4 mb-0 rounded-pill small d-flex align-items-center shadow-sm border-0">
+                                    <i class="bi bi-info-circle-fill me-2 text-primary"></i>
+                                    <span class="text-dark fw-medium">Mode consultation : modification réservée aux administrateurs.</span>
+                                </div>
+                            {% endif %}
                         </div>
                     </form>
                 </div>

@@ -303,7 +303,7 @@
                             </div>
                         </td>
 
-                        {# 2. RÔLE (Couleurs uniformisées) #}
+                        {# 2. RÔLE #}
                         <td>
                             {% if u.role %}
                                 {% set r = u.role.value %}
@@ -368,18 +368,20 @@
                         {# 7. ACTIONS #}
                         <td class="text-end pe-4">
                             <div class="d-flex justify-content-end align-items-center">
+                                {# --- BOUTON MODIFIER --- #}
                                 <div class="me-3">
-                                    {# Modification ici : On retire (u_role == 'resp' ...) #}
-                                    {% if u_role == 'admin' or u_role == 'coordo' %}
+                                    {# Ici, seuls l'Admin, le Coordo et le TOP COM peuvent modifier (Pencil) #}
+                                    {% if current_user.role.value in ['admin', 'coordo', 'top_com'] %}
                                     <a href="/admin/users/{{ u.id }}/edit" class="btn btn-sm btn-outline-primary px-3 shadow-sm">
                                         <i class="bi bi-pencil-square"></i>
                                     </a>
                                     {% endif %}
                                 </div>
 
+                                {# --- BOUTON TOGGLE STATUS (DÉSACTIVER) --- #}
                                 <div style="width: 40px;" class="d-flex justify-content-center">
-                                    {# On vérifie si l'utilisateur a le droit de modifier (Admin, Coordo, Top COM, Resp) #}
-                                    {% if current_user.role.value in ['admin', 'coordo', 'top_com', 'resp'] and u.id != current_user.id %}
+                                    {# On a retiré 'resp' de la liste ci-dessous pour lui masquer l'action #}
+                                    {% if current_user.role.value in ['admin', 'coordo', 'top_com'] and u.id != current_user.id %}
                                         
                                         <button type="button" 
                                                 onclick="confirmToggle('{{ u.id }}', '{{ u.email }}', '{{ u.is_active }}')" 
@@ -387,8 +389,8 @@
                                             <i class="bi {% if u.is_active %}bi-person-x-fill{% else %}bi-person-check-fill{% endif %} fs-5"></i>
                                         </button>
 
-                                        {# Formulaire unique pour le Toggle #}
-                                        <form id="toggle-form-{{ u.id }}" action="/users/{{ u.id }}/toggle-status" method="post" style="display: none;"></form>
+                                        {# Correction de l'URL : On ajoute /admin pour éviter la 404 #}
+                                        <form id="toggle-form-{{ u.id }}" action="/admin/users/{{ u.id }}/toggle-status" method="post" style="display: none;"></form>
 
                                     {% elif u.id == current_user.id %}
                                         <i class="bi bi-shield-check text-muted opacity-25 fs-5" title="C'est vous !"></i>
